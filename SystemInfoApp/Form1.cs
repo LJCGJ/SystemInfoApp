@@ -1,77 +1,68 @@
 using System;
 using System.Drawing;
-using System.Management; // É obrigatório ter instalado este pacote via NuGet
+using System.Management;
+using System.IO; // 1. Nova biblioteca adicionada para leitura de discos
 using System.Windows.Forms;
 
 namespace SystemInfoApp
 {
     public partial class Form1 : Form
     {
-        // Declaração dos componentes da interface na memória
         private SplitContainer conteinerDivisor;
         private TreeView menuLateral;
         private ListView listaDetalhes;
 
         public Form1()
         {
-            // Configurações básicas da janela principal
             this.Text = "Painel de Informações do Sistema";
             this.Size = new Size(800, 450);
             this.StartPosition = FormStartPosition.CenterScreen;
-
-            // Chama a função que desenhará toda a tela
             MontarInterfaceViaCodigo();
         }
 
         private void MontarInterfaceViaCodigo()
         {
-            // 1. Criação do Divisor da Tela (Painel esquerdo e direito)
             conteinerDivisor = new SplitContainer();
             conteinerDivisor.Dock = DockStyle.Fill;
             conteinerDivisor.SplitterDistance = 250;
 
-            // 2. Criação do Menu Lateral (TreeView)
             menuLateral = new TreeView();
             menuLateral.Dock = DockStyle.Fill;
 
-            // Adição estruturada dos itens no menu
             TreeNode noHardware = menuLateral.Nodes.Add("Hardware");
             noHardware.Nodes.Add("Memória RAM");
-            menuLateral.ExpandAll(); // Mantém o menu aberto por padrão
+            noHardware.Nodes.Add("Armazenamento"); // 2. Novo item inserido no menu lateral
+            menuLateral.ExpandAll();
 
-            // Definição do que acontece quando o menu é clicado
             menuLateral.AfterSelect += MenuLateral_AfterSelect;
 
-            // 3. Criação da Tabela de Informações (ListView)
             listaDetalhes = new ListView();
             listaDetalhes.Dock = DockStyle.Fill;
-            listaDetalhes.View = View.Details; // Ativa o modo de linhas e colunas
+            listaDetalhes.View = View.Details;
             listaDetalhes.FullRowSelect = true;
 
-            // Adição das colunas na tabela
             listaDetalhes.Columns.Add("Propriedade", 200);
             listaDetalhes.Columns.Add("Valor", 400);
 
-            // 4. Montagem final: Inserção dos componentes dentro da janela
             conteinerDivisor.Panel1.Controls.Add(menuLateral);
             conteinerDivisor.Panel2.Controls.Add(listaDetalhes);
             this.Controls.Add(conteinerDivisor);
         }
 
-        // Evento disparado pelo clique no menu lateral
         private void MenuLateral_AfterSelect(object sender, TreeViewEventArgs e)
         {
-            // A tabela é limpa antes de carregar novas informações
             listaDetalhes.Items.Clear();
 
-            // Uma verificação lógica identifica qual item foi selecionado
             if (e.Node.Text == "Memória RAM")
             {
                 CarregarDadosMemoriaRAM();
             }
+            else if (e.Node.Text == "Armazenamento") // 3. Identificação do novo clique
+            {
+                CarregarDadosArmazenamento();
+            }
         }
 
-        // Função isolada que contém o código WMI para leitura da RAM
         private void CarregarDadosMemoriaRAM()
         {
             try
@@ -87,15 +78,54 @@ namespace SystemInfoApp
 
                 long memoriaEmGB = memoriaTotalBytes / (1024 * 1024 * 1024);
 
-                // A informação é formatada e enviada como uma nova linha para a tabela visual
                 ListViewItem linha = new ListViewItem("Capacidade Total");
                 linha.SubItems.Add(memoriaEmGB + " GB");
                 listaDetalhes.Items.Add(linha);
             }
             catch (Exception erro)
             {
-                // Tratamento de falhas: impede o fechamento do sistema caso haja erro na leitura
                 ListViewItem linhaErro = new ListViewItem("Erro de leitura");
+                linhaErro.SubItems.Add(erro.Message);
+                listaDetalhes.Items.Add(linhaErro);
+            }
+        }
+
+        // 4. Nova função estruturada para leitura dos discos
+        private void CarregarDadosArmazenamento()
+        {
+            try
+            {
+                // A classe DriveInfo mapeia todos os volumes lógicos do sistema operacional
+                DriveInfo[] discos = DriveInfo.GetDrives();
+
+                foreach (DriveInfo disco in discos)
+                {
+                    // A propriedade IsReady previne travamentos ao tentar ler discos removíveis vazios
+                    if (disco.IsReady)
+                    {
+                        long espacoTotalGB = disco.TotalSize / (1024 * 1024 * 1024);
+                        long espacoLivreGB = disco.AvailableFreeSpace / (1024 * 1024 * 1024);
+
+                        ListViewItem linhaNome = new ListViewItem("Unidade " + disco.Name);
+                        linhaNome.SubItems.Add("Formato: " + disco.DriveFormat);
+                        listaDetalhes.Items.Add(linhaNome);
+
+                        ListViewItem linhaTotal = new ListViewItem("  Tamanho Total");
+                        linhaTotal.SubItems.Add(espacoTotalGB + " GB");
+                        listaDetalhes.Items.Add(linhaTotal);
+
+                        ListViewItem linhaLivre = new ListViewItem("  Espaço Livre");
+                        linhaLivre.SubItems.Add(espacoLivreGB + " GB");
+                        listaDetalhes.Items.Add(linhaLivre);
+
+                        // Inserção de uma linha vazia para separar visualmente as unidades de armazenamento
+                        listaDetalhes.Items.Add(new ListViewItem(""));
+                    }
+                }
+            }
+            catch (Exception erro)
+            {
+                ListViewItem linhaErro = new ListViewItem("Erro de leitura do disco");
                 linhaErro.SubItems.Add(erro.Message);
                 listaDetalhes.Items.Add(linhaErro);
             }

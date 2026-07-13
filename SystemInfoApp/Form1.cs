@@ -25,14 +25,13 @@ namespace SystemInfoApp
         {
             conteinerDivisor = new SplitContainer();
             conteinerDivisor.Dock = DockStyle.Fill;
-            conteinerDivisor.SplitterDistance = 220;
 
             menuLateral = new TreeView();
             menuLateral.Dock = DockStyle.Fill;
 
             TreeNode noHardware = menuLateral.Nodes.Add("Hardware");
-            // 1. Novo nó inserido na interface
             noHardware.Nodes.Add("Processador (CPU)");
+            noHardware.Nodes.Add("Placa de Vídeo (GPU)"); // Nova opção inserida
             noHardware.Nodes.Add("Memória RAM");
             noHardware.Nodes.Add("Armazenamento");
 
@@ -57,16 +56,25 @@ namespace SystemInfoApp
             conteinerDivisor.Panel1.Controls.Add(menuLateral);
             conteinerDivisor.Panel2.Controls.Add(listaDetalhes);
             this.Controls.Add(conteinerDivisor);
+
+            // Calcula o centro da tela no momento em que a janela carrega
+            this.Load += (sender, evento) =>
+            {
+                conteinerDivisor.SplitterDistance = this.ClientSize.Width / 3;
+            };
         }
 
         private void MenuLateral_AfterSelect(object sender, TreeViewEventArgs e)
         {
             listaDetalhes.Items.Clear();
 
-            // 2. Novo mapeamento de clique adicionado
             if (e.Node.Text == "Processador (CPU)")
             {
                 CarregarDadosProcessador();
+            }
+            else if (e.Node.Text == "Placa de Vídeo (GPU)") // Novo mapeamento
+            {
+                CarregarDadosPlacaDeVideo();
             }
             else if (e.Node.Text == "Memória RAM")
             {
@@ -100,7 +108,6 @@ namespace SystemInfoApp
             }
         }
 
-        // 3. Nova função estruturada para leitura do Processador
         private void CarregarDadosProcessador()
         {
             try
@@ -134,6 +141,49 @@ namespace SystemInfoApp
             catch (Exception erro)
             {
                 ListViewItem linhaErro = new ListViewItem("Erro de leitura do processador");
+                linhaErro.SubItems.Add(erro.Message);
+                listaDetalhes.Items.Add(linhaErro);
+            }
+        }
+
+        // Nova função para leitura da placa gráfica
+        private void CarregarDadosPlacaDeVideo()
+        {
+            try
+            {
+                ObjectQuery consulta = new ObjectQuery("SELECT Name, AdapterRAM, DriverVersion, VideoProcessor FROM Win32_VideoController");
+                ManagementObjectSearcher buscador = new ManagementObjectSearcher(consulta);
+
+                foreach (ManagementObject item in buscador.Get())
+                {
+                    ListViewItem linhaNome = new ListViewItem("Modelo");
+                    linhaNome.SubItems.Add(item["Name"]?.ToString());
+                    listaDetalhes.Items.Add(linhaNome);
+
+                    ListViewItem linhaProcessador = new ListViewItem("Processador Gráfico");
+                    linhaProcessador.SubItems.Add(item["VideoProcessor"]?.ToString());
+                    listaDetalhes.Items.Add(linhaProcessador);
+
+                    ListViewItem linhaDriver = new ListViewItem("Versão do Driver");
+                    linhaDriver.SubItems.Add(item["DriverVersion"]?.ToString());
+                    listaDetalhes.Items.Add(linhaDriver);
+
+                    if (item["AdapterRAM"] != null)
+                    {
+                        // A VRAM retorna em Bytes e deve ser convertida para Megabytes (MB)
+                        long vramBytes = Convert.ToInt64(item["AdapterRAM"]);
+                        long vramMB = vramBytes / (1024 * 1024);
+                        ListViewItem linhaRam = new ListViewItem("Memória de Vídeo (VRAM)");
+                        linhaRam.SubItems.Add(vramMB + " MB");
+                        listaDetalhes.Items.Add(linhaRam);
+                    }
+
+                    listaDetalhes.Items.Add(new ListViewItem("")); // Espaçador caso exista mais de uma placa
+                }
+            }
+            catch (Exception erro)
+            {
+                ListViewItem linhaErro = new ListViewItem("Erro de leitura da GPU");
                 linhaErro.SubItems.Add(erro.Message);
                 listaDetalhes.Items.Add(linhaErro);
             }

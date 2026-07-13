@@ -2,6 +2,8 @@ using System;
 using System.Drawing;
 using System.Management;
 using System.IO;
+using System.Net.NetworkInformation; // Biblioteca para acessar placas de rede
+using System.Net.Sockets; // Biblioteca para processar endereços IP
 using System.Windows.Forms;
 
 namespace SystemInfoApp
@@ -31,12 +33,16 @@ namespace SystemInfoApp
 
             TreeNode noHardware = menuLateral.Nodes.Add("Hardware");
             noHardware.Nodes.Add("Processador (CPU)");
-            noHardware.Nodes.Add("Placa de Vídeo (GPU)"); // Nova opção inserida
+            noHardware.Nodes.Add("Placa de Vídeo (GPU)");
             noHardware.Nodes.Add("Memória RAM");
             noHardware.Nodes.Add("Armazenamento");
 
             TreeNode noSoftware = menuLateral.Nodes.Add("Software");
             noSoftware.Nodes.Add("Sistema Operacional");
+
+            // 1. Nova categoria principal de Rede
+            TreeNode noRede = menuLateral.Nodes.Add("Rede");
+            noRede.Nodes.Add("Adaptadores de Conexão");
 
             menuLateral.ExpandAll();
             menuLateral.AfterSelect += MenuLateral_AfterSelect;
@@ -57,7 +63,6 @@ namespace SystemInfoApp
             conteinerDivisor.Panel2.Controls.Add(listaDetalhes);
             this.Controls.Add(conteinerDivisor);
 
-            // Calcula o centro da tela no momento em que a janela carrega
             this.Load += (sender, evento) =>
             {
                 conteinerDivisor.SplitterDistance = this.ClientSize.Width / 3;
@@ -72,7 +77,7 @@ namespace SystemInfoApp
             {
                 CarregarDadosProcessador();
             }
-            else if (e.Node.Text == "Placa de Vídeo (GPU)") // Novo mapeamento
+            else if (e.Node.Text == "Placa de Vídeo (GPU)")
             {
                 CarregarDadosPlacaDeVideo();
             }
@@ -87,6 +92,11 @@ namespace SystemInfoApp
             else if (e.Node.Text == "Sistema Operacional")
             {
                 CarregarDadosSistemaOperacional();
+            }
+            // 2. Mapeamento do novo clique
+            else if (e.Node.Text == "Adaptadores de Conexão")
+            {
+                CarregarDadosRede();
             }
 
             AjustarColunas();
@@ -146,7 +156,6 @@ namespace SystemInfoApp
             }
         }
 
-        // Nova função para leitura da placa gráfica
         private void CarregarDadosPlacaDeVideo()
         {
             try
@@ -170,7 +179,6 @@ namespace SystemInfoApp
 
                     if (item["AdapterRAM"] != null)
                     {
-                        // A VRAM retorna em Bytes e deve ser convertida para Megabytes (MB)
                         long vramBytes = Convert.ToInt64(item["AdapterRAM"]);
                         long vramMB = vramBytes / (1024 * 1024);
                         ListViewItem linhaRam = new ListViewItem("Memória de Vídeo (VRAM)");
@@ -178,7 +186,7 @@ namespace SystemInfoApp
                         listaDetalhes.Items.Add(linhaRam);
                     }
 
-                    listaDetalhes.Items.Add(new ListViewItem("")); // Espaçador caso exista mais de uma placa
+                    listaDetalhes.Items.Add(new ListViewItem(""));
                 }
             }
             catch (Exception erro)
@@ -281,6 +289,57 @@ namespace SystemInfoApp
             catch (Exception erro)
             {
                 ListViewItem linhaErro = new ListViewItem("Erro de leitura do sistema");
+                linhaErro.SubItems.Add(erro.Message);
+                listaDetalhes.Items.Add(linhaErro);
+            }
+        }
+
+        // 3. Nova função dedicada à extração de dados de Rede
+        private void CarregarDadosRede()
+        {
+            try
+            {
+                NetworkInterface[] adaptadores = NetworkInterface.GetAllNetworkInterfaces();
+
+                foreach (NetworkInterface adaptador in adaptadores)
+                {
+                    // O filtro OperationalStatus.Up garante que apenas portas ativas (com cabo ou Wi-Fi ligado) sejam lidas
+                    if (adaptador.OperationalStatus == OperationalStatus.Up)
+                    {
+                        ListViewItem linhaNome = new ListViewItem("Nome da Placa");
+                        linhaNome.SubItems.Add(adaptador.Name);
+                        listaDetalhes.Items.Add(linhaNome);
+
+                        ListViewItem linhaDesc = new ListViewItem("Descrição");
+                        linhaDesc.SubItems.Add(adaptador.Description);
+                        listaDetalhes.Items.Add(linhaDesc);
+
+                        ListViewItem linhaMAC = new ListViewItem("Endereço Físico (MAC)");
+                        // A formatação BitConverter é utilizada para exibir o MAC Address no padrão "00-11-22-33-44-55"
+                        string macAdress = BitConverter.ToString(adaptador.GetPhysicalAddress().GetAddressBytes());
+                        linhaMAC.SubItems.Add(macAdress);
+                        listaDetalhes.Items.Add(linhaMAC);
+
+                        IPInterfaceProperties propriedades = adaptador.GetIPProperties();
+
+                        foreach (UnicastIPAddressInformation ip in propriedades.UnicastAddresses)
+                        {
+                            // A constante InterNetwork força a exibição do padrão IPv4, ignorando o IPv6 que é mais longo e menos legível
+                            if (ip.Address.AddressFamily == AddressFamily.InterNetwork)
+                            {
+                                ListViewItem linhaIP = new ListViewItem("Endereço IPv4");
+                                linhaIP.SubItems.Add(ip.Address.ToString());
+                                listaDetalhes.Items.Add(linhaIP);
+                            }
+                        }
+
+                        listaDetalhes.Items.Add(new ListViewItem(""));
+                    }
+                }
+            }
+            catch (Exception erro)
+            {
+                ListViewItem linhaErro = new ListViewItem("Erro de leitura da rede");
                 linhaErro.SubItems.Add(erro.Message);
                 listaDetalhes.Items.Add(linhaErro);
             }

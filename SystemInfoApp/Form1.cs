@@ -8,7 +8,7 @@ using System.Windows.Forms;
 using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Linq;
-using Microsoft.Win32; // Biblioteca inserida para extrair a Chave de Ativação (Product Key) e Versão (22H2)
+using Microsoft.Win32;
 
 namespace SystemInfoApp
 {
@@ -45,12 +45,16 @@ namespace SystemInfoApp
 
             TreeNode noSensores = menuLateral.Nodes.Add("Sensores em Tempo Real");
             noSensores.Nodes.Add("Monitoramento de CPU e RAM");
+            noSensores.Nodes.Add("Sensores Térmicos (Temperaturas)"); // Nova subcategoria de sensores
 
             TreeNode noHardware = menuLateral.Nodes.Add("Hardware");
             noHardware.Nodes.Add("Processador (CPU)");
+            noHardware.Nodes.Add("Placa-Mãe e BIOS");
             noHardware.Nodes.Add("Placa de Vídeo (GPU)");
             noHardware.Nodes.Add("Memória RAM");
             noHardware.Nodes.Add("Armazenamento");
+            noHardware.Nodes.Add("Dispositivos USB");
+            noHardware.Nodes.Add("Dispositivos de Áudio");
             noHardware.Nodes.Add("Bateria e Energia");
 
             TreeNode noSoftware = menuLateral.Nodes.Add("Software");
@@ -138,10 +142,14 @@ namespace SystemInfoApp
                 await CarregarDadosTempoRealAsync();
                 temporizadorMonitoramento.Start();
             }
+            else if (e.Node.Text == "Sensores Térmicos (Temperaturas)") CarregarDadosTemperaturas(); // Nova função mapeada
             else if (e.Node.Text == "Processador (CPU)") CarregarDadosProcessador();
+            else if (e.Node.Text == "Placa-Mãe e BIOS") CarregarDadosPlacaMae();
             else if (e.Node.Text == "Placa de Vídeo (GPU)") CarregarDadosPlacaDeVideo();
             else if (e.Node.Text == "Memória RAM") CarregarDadosMemoriaRAM();
             else if (e.Node.Text == "Armazenamento") CarregarDadosArmazenamento();
+            else if (e.Node.Text == "Dispositivos USB") CarregarDadosUSB();
+            else if (e.Node.Text == "Dispositivos de Áudio") CarregarDadosAudio();
             else if (e.Node.Text == "Bateria e Energia") CarregarDadosBateria();
             else if (e.Node.Text == "Sistema Operacional") CarregarDadosSistemaOperacional();
             else if (e.Node.Text == "Processos em Execução") CarregarDadosProcessos();
@@ -214,12 +222,52 @@ namespace SystemInfoApp
             catch (Exception) { }
         }
 
+        // --- NOVA FUNÇÃO: SENSORES TÉRMICOS ---
+        private void CarregarDadosTemperaturas()
+        {
+            try
+            {
+                listaDetalhes.Items.Add(new ListViewItem("--- SENSORES DE TEMPERATURA DA PLACA-MÃE (ACPI ZONES) ---"));
+
+                // Exige execução em modo Administrador e suporte do BIOS para retornar dados exatos
+                ObjectQuery consultaTermica = new ObjectQuery("SELECT CurrentTemperature, InstanceName FROM MSAcpi_ThermalZoneTemperature");
+                using (ManagementObjectSearcher buscadorTermico = new ManagementObjectSearcher(@"root\WMI", consultaTermica.QueryString))
+                {
+                    int contadorZonas = 0;
+                    foreach (ManagementObject zona in buscadorTermico.Get())
+                    {
+                        string nomeZona = zona["InstanceName"]?.ToString();
+                        if (zona["CurrentTemperature"] != null)
+                        {
+                            double temperaturaKelvinDecimos = Convert.ToDouble(zona["CurrentTemperature"]);
+                            double temperaturaCelsius = (temperaturaKelvinDecimos / 10.0) - 273.15;
+
+                            // Ignora falsos positivos matemáticos (sensores inativos costumam retornar exatamente 27.8 ou 0 absoluto)
+                            if (temperaturaCelsius > 0 && temperaturaCelsius < 150)
+                            {
+                                listaDetalhes.Items.Add(new ListViewItem(new[] { $"Sensor Térmico Identificado: {nomeZona}", $"{Math.Round(temperaturaCelsius, 1)} °C" }));
+                                contadorZonas++;
+                            }
+                        }
+                    }
+                    if (contadorZonas == 0)
+                    {
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Status", "Sensores térmicos restritos pelo fabricante do hardware ou privilégios de Administrador requeridos." }));
+                    }
+                }
+            }
+            catch (ManagementException)
+            {
+                listaDetalhes.Items.Add(new ListViewItem(new[] { "Aviso de Permissão", "A leitura nativa de temperaturas exige que o aplicativo seja executado como Administrador." }));
+            }
+            catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Sensores)", erro.Message })); }
+        }
+
         private void CarregarDadosProcessos()
         {
             try
             {
                 Process[] todosProcessos = Process.GetProcesses();
-
                 listaDetalhes.Items.Add(new ListViewItem(new[] { "Total de Processos Ativos", todosProcessos.Length.ToString() }));
                 listaDetalhes.Items.Add(new ListViewItem(""));
                 listaDetalhes.Items.Add(new ListViewItem(new[] { "NOME DO PROCESSO", "USO DE RECURSOS (RAM E CPU)" }));
@@ -236,6 +284,7 @@ namespace SystemInfoApp
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Processos)", erro.Message })); }
         }
 
+        // --- BATERIA E ENERGIA (ATUALIZADA COM SAÚDE MATEMÁTICA) ---
         private void CarregarDadosBateria()
         {
             try
@@ -243,22 +292,57 @@ namespace SystemInfoApp
                 PowerStatus energia = SystemInformation.PowerStatus;
                 string statusTomada = energia.PowerLineStatus == PowerLineStatus.Online ? "Conectado (Na Tomada)" : "Desconectado (Na Bateria)";
                 listaDetalhes.Items.Add(new ListViewItem(new[] { "Status da Fonte de Energia", statusTomada }));
-                int porcentagem = (int)(energia.BatteryLifePercent * 100);
-                string textoPorcentagem = porcentagem > 100 ? "Bateria não detectada (Desktop)" : porcentagem + "%";
-                listaDetalhes.Items.Add(new ListViewItem(new[] { "Nível de Carga da Bateria", textoPorcentagem }));
+
+                int porcentagemCarga = (int)(energia.BatteryLifePercent * 100);
+                string textoPorcentagem = porcentagemCarga > 100 ? "Bateria não detectada (Desktop)" : porcentagemCarga + "%";
+                listaDetalhes.Items.Add(new ListViewItem(new[] { "Nível de Carga Atual", textoPorcentagem }));
+
                 string statusCarga = energia.BatteryChargeStatus.ToString();
                 if (statusCarga == "NoSystemBattery") statusCarga = "Sem bateria conectada";
                 listaDetalhes.Items.Add(new ListViewItem(new[] { "Estado de Carregamento", statusCarga }));
+
+                listaDetalhes.Items.Add(new ListViewItem(""));
+                listaDetalhes.Items.Add(new ListViewItem("--- ANÁLISE DE SAÚDE DA BATERIA ---"));
+
+                ObjectQuery consultaBateria = new ObjectQuery("SELECT DesignCapacity, FullChargeCapacity FROM Win32_Battery");
+                using (ManagementObjectSearcher buscadorBateria = new ManagementObjectSearcher(consultaBateria))
+                {
+                    bool bateriaDetectadaWMI = false;
+                    foreach (ManagementObject bateria in buscadorBateria.Get())
+                    {
+                        bateriaDetectadaWMI = true;
+                        if (bateria["DesignCapacity"] != null && bateria["FullChargeCapacity"] != null)
+                        {
+                            uint capacidadeFabrica = Convert.ToUInt32(bateria["DesignCapacity"]);
+                            uint capacidadeMaximaAtual = Convert.ToUInt32(bateria["FullChargeCapacity"]);
+
+                            listaDetalhes.Items.Add(new ListViewItem(new[] { "Capacidade Original de Fábrica", $"{capacidadeFabrica} mWh" }));
+                            listaDetalhes.Items.Add(new ListViewItem(new[] { "Capacidade Máxima Atual", $"{capacidadeMaximaAtual} mWh" }));
+
+                            if (capacidadeFabrica > 0)
+                            {
+                                double saudePorcentagem = Math.Round(((double)capacidadeMaximaAtual / capacidadeFabrica) * 100, 2);
+
+                                string diagnosticoSaude = saudePorcentagem >= 80 ? "Boa (Saudável)" :
+                                                          saudePorcentagem >= 50 ? "Atenção (Desgastada)" : "Crítica (Substituição Recomendada)";
+
+                                listaDetalhes.Items.Add(new ListViewItem(new[] { "Saúde Estimada da Célula", $"{saudePorcentagem}% - Status: {diagnosticoSaude}" }));
+                            }
+                        }
+                    }
+                    if (!bateriaDetectadaWMI)
+                    {
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Diagnóstico de Saúde", "Não disponível para este equipamento." }));
+                    }
+                }
             }
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Bateria)", erro.Message })); }
         }
 
-        // --- SISTEMA OPERACIONAL (MAXIMIZADO) ---
         private void CarregarDadosSistemaOperacional()
         {
             try
             {
-                // 1. Extração via WMI
                 ObjectQuery consultaOS = new ObjectQuery("SELECT Caption, CSDVersion, BuildNumber, InstallDate, SerialNumber, OSArchitecture, SystemDirectory FROM Win32_OperatingSystem");
                 using (ManagementObjectSearcher buscadorOS = new ManagementObjectSearcher(consultaOS))
                 {
@@ -268,7 +352,7 @@ namespace SystemInfoApp
                         listaDetalhes.Items.Add(new ListViewItem(new[] { "Arquitetura do Sistema", os["OSArchitecture"]?.ToString() }));
 
                         string servicePack = os["CSDVersion"]?.ToString();
-                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Service Pack (servesipec)", string.IsNullOrEmpty(servicePack) ? "Nenhum" : servicePack }));
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Service Pack", string.IsNullOrEmpty(servicePack) ? "Nenhum" : servicePack }));
 
                         listaDetalhes.Items.Add(new ListViewItem(new[] { "Número da Compilação (Build)", os["BuildNumber"]?.ToString() }));
 
@@ -283,7 +367,6 @@ namespace SystemInfoApp
                     }
                 }
 
-                // 2. Extração via Registro (Versão Comercial "verção h2so")
                 try
                 {
                     using (RegistryKey chave = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion"))
@@ -293,14 +376,13 @@ namespace SystemInfoApp
                             string versaoComercial = chave.GetValue("DisplayVersion")?.ToString();
                             if (!string.IsNullOrEmpty(versaoComercial))
                             {
-                                listaDetalhes.Items.Add(new ListViewItem(new[] { "Versão de Lançamento (verção)", versaoComercial }));
+                                listaDetalhes.Items.Add(new ListViewItem(new[] { "Versão de Lançamento", versaoComercial }));
                             }
                         }
                     }
                 }
-                catch { } // Erro de acesso ao registro é ignorado silenciosamente
+                catch { }
 
-                // 3. Extração via Registro (Chave de Ativação "igual o siw")
                 try
                 {
                     using (RegistryKey chave = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\SoftwareProtectionPlatform"))
@@ -326,6 +408,50 @@ namespace SystemInfoApp
                 listaDetalhes.Items.Add(new ListViewItem(new[] { "Tempo Ligado (Uptime)", textoUptime }));
             }
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (OS)", erro.Message })); }
+        }
+
+        private void CarregarDadosPlacaMae()
+        {
+            try
+            {
+                listaDetalhes.Items.Add(new ListViewItem("--- ESPECIFICAÇÕES DA PLACA-MÃE ---"));
+                ObjectQuery consultaPlaca = new ObjectQuery("SELECT Manufacturer, Product, SerialNumber, Version FROM Win32_BaseBoard");
+                using (ManagementObjectSearcher buscadorPlaca = new ManagementObjectSearcher(consultaPlaca))
+                {
+                    foreach (ManagementObject mb in buscadorPlaca.Get())
+                    {
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Fabricante da Placa", mb["Manufacturer"]?.ToString() }));
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Modelo (Produto)", mb["Product"]?.ToString() }));
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Revisão / Versão", mb["Version"]?.ToString() }));
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Número de Série Físico", mb["SerialNumber"]?.ToString() }));
+                    }
+                }
+
+                listaDetalhes.Items.Add(new ListViewItem(""));
+                listaDetalhes.Items.Add(new ListViewItem("--- ESPECIFICAÇÕES DO BIOS ---"));
+                ObjectQuery consultaBios = new ObjectQuery("SELECT Manufacturer, Name, Version, ReleaseDate FROM Win32_BIOS");
+                using (ManagementObjectSearcher buscadorBios = new ManagementObjectSearcher(consultaBios))
+                {
+                    foreach (ManagementObject bios in buscadorBios.Get())
+                    {
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Desenvolvedor do BIOS", bios["Manufacturer"]?.ToString() }));
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Versão Instalada", bios["Name"]?.ToString() }));
+
+                        if (bios["ReleaseDate"] != null)
+                        {
+                            string dataBruta = bios["ReleaseDate"].ToString();
+                            if (dataBruta.Length >= 8)
+                            {
+                                string ano = dataBruta.Substring(0, 4);
+                                string mes = dataBruta.Substring(4, 2);
+                                string dia = dataBruta.Substring(6, 2);
+                                listaDetalhes.Items.Add(new ListViewItem(new[] { "Data de Compilação", $"{dia}/{mes}/{ano}" }));
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Placa-Mãe)", erro.Message })); }
         }
 
         private void CarregarDadosProcessador()
@@ -385,7 +511,7 @@ namespace SystemInfoApp
         {
             try
             {
-                ObjectQuery consulta = new ObjectQuery("SELECT Name, AdapterRAM, DriverVersion, VideoProcessor, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate, VideoArchitecture FROM Win32_VideoController");
+                ObjectQuery consulta = new ObjectQuery("SELECT Name, AdapterRAM, DriverVersion, VideoProcessor, CurrentBitsPerPixel, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate FROM Win32_VideoController");
                 using (ManagementObjectSearcher buscador = new ManagementObjectSearcher(consulta))
                 {
                     foreach (ManagementObject item in buscador.Get())
@@ -400,11 +526,16 @@ namespace SystemInfoApp
                             listaDetalhes.Items.Add(new ListViewItem(new[] { "Memória de Vídeo (VRAM)", vramMB + " MB" }));
                         }
 
+                        if (item["CurrentBitsPerPixel"] != null)
+                        {
+                            listaDetalhes.Items.Add(new ListViewItem(new[] { "Profundidade de Cores", item["CurrentBitsPerPixel"]?.ToString() + " Bits" }));
+                        }
+
                         if (item["CurrentHorizontalResolution"] != null)
                         {
                             string resolucao = $"{item["CurrentHorizontalResolution"]} x {item["CurrentVerticalResolution"]}";
                             listaDetalhes.Items.Add(new ListViewItem(new[] { "Resolução Atual", resolucao }));
-                            listaDetalhes.Items.Add(new ListViewItem(new[] { "Taxa de Atualização", item["CurrentRefreshRate"]?.ToString() + " Hz" }));
+                            listaDetalhes.Items.Add(new ListViewItem(new[] { "Taxa de Atualização Máxima", item["CurrentRefreshRate"]?.ToString() + " Hz" }));
                         }
                         listaDetalhes.Items.Add(new ListViewItem(""));
                     }
@@ -413,12 +544,11 @@ namespace SystemInfoApp
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (GPU)", erro.Message })); }
         }
 
-        // --- MEMÓRIA RAM (EXPANDIDA PARA DETECTAR O TIPO DDR EXATO) ---
         private void CarregarDadosMemoriaRAM()
         {
             try
             {
-                ObjectQuery consulta = new ObjectQuery("SELECT Capacity, Speed, Manufacturer, PartNumber, SMBIOSMemoryType FROM Win32_PhysicalMemory");
+                ObjectQuery consulta = new ObjectQuery("SELECT Capacity, Speed, DataWidth, Manufacturer, PartNumber, SMBIOSMemoryType FROM Win32_PhysicalMemory");
                 using (ManagementObjectSearcher buscador = new ManagementObjectSearcher(consulta))
                 {
                     long memoriaTotalBytes = 0;
@@ -444,6 +574,16 @@ namespace SystemInfoApp
                         listaDetalhes.Items.Add(new ListViewItem(new[] { "Capacidade", (capacidadeBytes / (1024 * 1024 * 1024)) + " GB" }));
                         listaDetalhes.Items.Add(new ListViewItem(new[] { "Tecnologia", tipoMemoria }));
                         listaDetalhes.Items.Add(new ListViewItem(new[] { "Frequência (Velocidade)", item["Speed"]?.ToString() + " MHz" }));
+
+                        string velocidadeSTR = item["Speed"]?.ToString();
+                        string larguraDadosSTR = item["DataWidth"]?.ToString();
+                        if (int.TryParse(velocidadeSTR, out int velocidade) && int.TryParse(larguraDadosSTR, out int larguraDados))
+                        {
+                            int bandaMBs = (velocidade * larguraDados) / 8;
+                            double bandaGBs = Math.Round(bandaMBs / 1024.0, 2);
+                            listaDetalhes.Items.Add(new ListViewItem(new[] { "Largura de Banda Máxima", bandaGBs.ToString("0.00") + " GB/s" }));
+                        }
+
                         listaDetalhes.Items.Add(new ListViewItem(new[] { "Fabricante", item["Manufacturer"]?.ToString() }));
                         listaDetalhes.Items.Add(new ListViewItem(new[] { "Número de Série (Part Number)", item["PartNumber"]?.ToString().Trim() }));
                         listaDetalhes.Items.Add(new ListViewItem(""));
@@ -455,12 +595,12 @@ namespace SystemInfoApp
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (RAM)", erro.Message })); }
         }
 
-        // --- ARMAZENAMENTO (EXPANDIDO PARA DETECTAR NÚMERO DE SÉRIE E TIPO DE PARTIÇÃO) ---
+        // --- ARMAZENAMENTO (ATUALIZADA COM STATUS SMART E SAÚDE) ---
         private void CarregarDadosArmazenamento()
         {
             try
             {
-                ObjectQuery consultaDiscos = new ObjectQuery("SELECT Model, InterfaceType, Size, SerialNumber FROM Win32_DiskDrive");
+                ObjectQuery consultaDiscos = new ObjectQuery("SELECT Model, InterfaceType, Size, SerialNumber, Status FROM Win32_DiskDrive");
                 using (ManagementObjectSearcher buscadorDiscos = new ManagementObjectSearcher(consultaDiscos))
                 {
                     listaDetalhes.Items.Add(new ListViewItem("--- DISCOS FÍSICOS (HARDWARE) ---"));
@@ -469,6 +609,14 @@ namespace SystemInfoApp
                         listaDetalhes.Items.Add(new ListViewItem(new[] { "Modelo do Disco", discoFisico["Model"]?.ToString() }));
                         listaDetalhes.Items.Add(new ListViewItem(new[] { "Número de Série", discoFisico["SerialNumber"]?.ToString().Trim() }));
                         listaDetalhes.Items.Add(new ListViewItem(new[] { "Tipo de Interface", discoFisico["InterfaceType"]?.ToString() }));
+
+                        string statusSaude = discoFisico["Status"]?.ToString();
+                        string diagnostico = statusSaude == "OK" ? "Boa (Saudável)" :
+                                             statusSaude == "Pred Fail" ? "Alerta (Falha Iminente SMART)" :
+                                             statusSaude == "Error" ? "Crítico (Erros de Leitura)" : statusSaude;
+
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Status de Saúde (SMART)", diagnostico }));
+
                         if (discoFisico["Size"] != null)
                         {
                             long tamanhoGB = Convert.ToInt64(discoFisico["Size"]) / (1024 * 1024 * 1024);
@@ -525,6 +673,87 @@ namespace SystemInfoApp
                 }
             }
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Rede)", erro.Message })); }
+        }
+
+        private void CarregarDadosUSB()
+        {
+            try
+            {
+                listaDetalhes.Items.Add(new ListViewItem("--- DISPOSITIVOS USB CONECTADOS ---"));
+
+                ObjectQuery consulta = new ObjectQuery("SELECT Caption, Manufacturer FROM Win32_PnPEntity WHERE DeviceID LIKE '%USB%'");
+                using (ManagementObjectSearcher buscador = new ManagementObjectSearcher(consulta))
+                {
+                    int contador = 1;
+                    foreach (ManagementObject item in buscador.Get())
+                    {
+                        string nome = item["Caption"]?.ToString();
+
+                        if (!string.IsNullOrEmpty(nome) && !nome.Contains("Hub") && !nome.Contains("Root"))
+                        {
+                            listaDetalhes.Items.Add(new ListViewItem(new[] { $"Dispositivo {contador}", nome }));
+
+                            string fabricante = item["Manufacturer"]?.ToString();
+                            if (!string.IsNullOrEmpty(fabricante) && fabricante != "(Bateria Padrão do Sistema)" && fabricante != "(Standard USB Host Controller)")
+                            {
+                                listaDetalhes.Items.Add(new ListViewItem(new[] { "  Fabricante", fabricante }));
+                            }
+
+                            listaDetalhes.Items.Add(new ListViewItem(""));
+                            contador++;
+                        }
+                    }
+
+                    if (contador == 1)
+                    {
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Status", "Nenhum periférico USB detectado no momento." }));
+                    }
+                }
+            }
+            catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (USB)", erro.Message })); }
+        }
+
+        private void CarregarDadosAudio()
+        {
+            try
+            {
+                listaDetalhes.Items.Add(new ListViewItem("--- DISPOSITIVOS DE ÁUDIO ---"));
+                ObjectQuery consulta = new ObjectQuery("SELECT Name, Manufacturer, Status FROM Win32_SoundDevice");
+
+                using (ManagementObjectSearcher buscador = new ManagementObjectSearcher(consulta))
+                {
+                    int contador = 1;
+                    foreach (ManagementObject item in buscador.Get())
+                    {
+                        string nome = item["Name"]?.ToString();
+                        if (!string.IsNullOrEmpty(nome))
+                        {
+                            listaDetalhes.Items.Add(new ListViewItem(new[] { $"Dispositivo {contador}", nome }));
+
+                            string fabricante = item["Manufacturer"]?.ToString();
+                            if (!string.IsNullOrEmpty(fabricante))
+                            {
+                                listaDetalhes.Items.Add(new ListViewItem(new[] { "  Fabricante", fabricante }));
+                            }
+
+                            string status = item["Status"]?.ToString();
+                            if (!string.IsNullOrEmpty(status))
+                            {
+                                listaDetalhes.Items.Add(new ListViewItem(new[] { "  Status de Operação", status }));
+                            }
+
+                            listaDetalhes.Items.Add(new ListViewItem(""));
+                            contador++;
+                        }
+                    }
+
+                    if (contador == 1)
+                    {
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Status", "Nenhuma controladora de áudio instalada encontrada." }));
+                    }
+                }
+            }
+            catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Áudio)", erro.Message })); }
         }
     }
 }

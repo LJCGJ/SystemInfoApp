@@ -8,6 +8,7 @@ using System.Windows.Forms;
 using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Linq;
+using System.Collections.Generic;
 using Microsoft.Win32;
 
 namespace SystemInfoApp
@@ -45,16 +46,18 @@ namespace SystemInfoApp
 
             TreeNode noSensores = menuLateral.Nodes.Add("Sensores em Tempo Real");
             noSensores.Nodes.Add("Monitoramento de CPU e RAM");
-            noSensores.Nodes.Add("Sensores Térmicos (Temperaturas)"); // Nova subcategoria de sensores
+            noSensores.Nodes.Add("Sensores Térmicos (Temperaturas)");
 
             TreeNode noHardware = menuLateral.Nodes.Add("Hardware");
             noHardware.Nodes.Add("Processador (CPU)");
             noHardware.Nodes.Add("Placa-Mãe e BIOS");
             noHardware.Nodes.Add("Placa de Vídeo (GPU)");
+            noHardware.Nodes.Add("Telas e Monitores");
             noHardware.Nodes.Add("Memória RAM");
             noHardware.Nodes.Add("Armazenamento");
             noHardware.Nodes.Add("Dispositivos USB");
             noHardware.Nodes.Add("Dispositivos de Áudio");
+            noHardware.Nodes.Add("Impressoras e Fax"); // Nova funcionalidade de hardware inserida
             noHardware.Nodes.Add("Bateria e Energia");
 
             TreeNode noSoftware = menuLateral.Nodes.Add("Software");
@@ -142,14 +145,16 @@ namespace SystemInfoApp
                 await CarregarDadosTempoRealAsync();
                 temporizadorMonitoramento.Start();
             }
-            else if (e.Node.Text == "Sensores Térmicos (Temperaturas)") CarregarDadosTemperaturas(); // Nova função mapeada
+            else if (e.Node.Text == "Sensores Térmicos (Temperaturas)") CarregarDadosTemperaturas();
             else if (e.Node.Text == "Processador (CPU)") CarregarDadosProcessador();
             else if (e.Node.Text == "Placa-Mãe e BIOS") CarregarDadosPlacaMae();
             else if (e.Node.Text == "Placa de Vídeo (GPU)") CarregarDadosPlacaDeVideo();
+            else if (e.Node.Text == "Telas e Monitores") CarregarDadosMonitores();
             else if (e.Node.Text == "Memória RAM") CarregarDadosMemoriaRAM();
             else if (e.Node.Text == "Armazenamento") CarregarDadosArmazenamento();
             else if (e.Node.Text == "Dispositivos USB") CarregarDadosUSB();
             else if (e.Node.Text == "Dispositivos de Áudio") CarregarDadosAudio();
+            else if (e.Node.Text == "Impressoras e Fax") CarregarDadosImpressoras(); // Mapeamento da nova função
             else if (e.Node.Text == "Bateria e Energia") CarregarDadosBateria();
             else if (e.Node.Text == "Sistema Operacional") CarregarDadosSistemaOperacional();
             else if (e.Node.Text == "Processos em Execução") CarregarDadosProcessos();
@@ -208,59 +213,106 @@ namespace SystemInfoApp
                     }
                 });
 
-                if (listaDetalhes.Items.Count >= 2 && listaDetalhes.Items[0].Text == "Uso Atual do Processador (CPU)")
+                listaDetalhes.BeginUpdate();
+
+                void AtualizarOuInserirLinha(string chaveBusca, string textoPropriedade, string valorPropriedade)
                 {
-                    listaDetalhes.Items[0].SubItems[1].Text = porcentagemCpu;
-                    listaDetalhes.Items[1].SubItems[1].Text = statusRam;
+                    if (listaDetalhes.Items.ContainsKey(chaveBusca))
+                    {
+                        listaDetalhes.Items[chaveBusca].SubItems[1].Text = valorPropriedade;
+                    }
+                    else
+                    {
+                        ListViewItem linha = new ListViewItem(new[] { textoPropriedade, valorPropriedade });
+                        linha.Name = chaveBusca;
+                        listaDetalhes.Items.Add(linha);
+                    }
                 }
-                else
-                {
-                    listaDetalhes.Items.Add(new ListViewItem(new[] { "Uso Atual do Processador (CPU)", porcentagemCpu }));
-                    listaDetalhes.Items.Add(new ListViewItem(new[] { "Uso Atual da Memória RAM", statusRam }));
-                }
+
+                AtualizarOuInserirLinha("USO_CPU", "Uso Atual do Processador (CPU)", porcentagemCpu);
+                AtualizarOuInserirLinha("USO_RAM", "Uso Atual da Memória RAM", statusRam);
+
+                listaDetalhes.EndUpdate();
             }
             catch (Exception) { }
         }
 
-        // --- NOVA FUNÇÃO: SENSORES TÉRMICOS ---
         private void CarregarDadosTemperaturas()
         {
             try
             {
-                listaDetalhes.Items.Add(new ListViewItem("--- SENSORES DE TEMPERATURA DA PLACA-MÃE (ACPI ZONES) ---"));
+                listaDetalhes.Items.Add(new ListViewItem("--- SENSORES TÉRMICOS NATIVOS (WMI) ---"));
+                int contadorZonas = 0;
 
-                // Exige execução em modo Administrador e suporte do BIOS para retornar dados exatos
-                ObjectQuery consultaTermica = new ObjectQuery("SELECT CurrentTemperature, InstanceName FROM MSAcpi_ThermalZoneTemperature");
-                using (ManagementObjectSearcher buscadorTermico = new ManagementObjectSearcher(@"root\WMI", consultaTermica.QueryString))
+                try
                 {
-                    int contadorZonas = 0;
-                    foreach (ManagementObject zona in buscadorTermico.Get())
+                    ObjectQuery consultaTermica = new ObjectQuery("SELECT CurrentTemperature, InstanceName FROM MSAcpi_ThermalZoneTemperature");
+                    using (ManagementObjectSearcher buscadorTermico = new ManagementObjectSearcher(@"root\WMI", consultaTermica.QueryString))
                     {
-                        string nomeZona = zona["InstanceName"]?.ToString();
-                        if (zona["CurrentTemperature"] != null)
+                        foreach (ManagementObject zona in buscadorTermico.Get())
                         {
-                            double temperaturaKelvinDecimos = Convert.ToDouble(zona["CurrentTemperature"]);
-                            double temperaturaCelsius = (temperaturaKelvinDecimos / 10.0) - 273.15;
-
-                            // Ignora falsos positivos matemáticos (sensores inativos costumam retornar exatamente 27.8 ou 0 absoluto)
-                            if (temperaturaCelsius > 0 && temperaturaCelsius < 150)
+                            string nomeZona = zona["InstanceName"]?.ToString();
+                            if (zona["CurrentTemperature"] != null)
                             {
-                                listaDetalhes.Items.Add(new ListViewItem(new[] { $"Sensor Térmico Identificado: {nomeZona}", $"{Math.Round(temperaturaCelsius, 1)} °C" }));
-                                contadorZonas++;
+                                double temperaturaKelvinDecimos = Convert.ToDouble(zona["CurrentTemperature"]);
+                                double temperaturaCelsius = (temperaturaKelvinDecimos / 10.0) - 273.15;
+
+                                if (temperaturaCelsius > 0 && temperaturaCelsius < 150)
+                                {
+                                    listaDetalhes.Items.Add(new ListViewItem(new[] { $"Placa-Mãe: ACPI Zone ({nomeZona})", $"{Math.Round(temperaturaCelsius, 1)} °C" }));
+                                    contadorZonas++;
+                                }
                             }
                         }
                     }
-                    if (contadorZonas == 0)
+                }
+                catch (ManagementException) { }
+
+                if (contadorZonas == 0)
+                {
+                    listaDetalhes.Items.Add(new ListViewItem(""));
+                    listaDetalhes.Items.Add(new ListViewItem(new[] { "Status de Leitura Térmica", "Não Suportado pelo WMI Padrão" }));
+                    listaDetalhes.Items.Add(new ListViewItem(new[] { "Restrição Técnica (GPU / CPU / Discos)", "As temperaturas físicas diretas do silício são bloqueadas pelo kernel do Windows." }));
+                }
+            }
+            catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Sensores)", erro.Message })); }
+        }
+
+        private void CarregarDadosMonitores()
+        {
+            try
+            {
+                listaDetalhes.Items.Add(new ListViewItem("--- MONITORES CONECTADOS E RECONHECIDOS ---"));
+                Screen[] telas = Screen.AllScreens;
+                int contador = 1;
+
+                foreach (Screen tela in telas)
+                {
+                    string statusPrincipal = tela.Primary ? " (Tela Principal)" : "";
+                    listaDetalhes.Items.Add(new ListViewItem(new[] { $"Monitor {contador}{statusPrincipal}", tela.DeviceName }));
+                    listaDetalhes.Items.Add(new ListViewItem(new[] { "  Resolução Física Atual", $"{tela.Bounds.Width} x {tela.Bounds.Height} Pixels" }));
+                    listaDetalhes.Items.Add(new ListViewItem(new[] { "  Área de Trabalho Útil", $"{tela.WorkingArea.Width} x {tela.WorkingArea.Height} Pixels" }));
+                    listaDetalhes.Items.Add(new ListViewItem(""));
+                    contador++;
+                }
+
+                listaDetalhes.Items.Add(new ListViewItem("--- ESPECIFICAÇÕES DO FABRICANTE (WMI) ---"));
+                ObjectQuery consulta = new ObjectQuery("SELECT Caption, MonitorManufacturer FROM Win32_DesktopMonitor");
+                using (ManagementObjectSearcher buscador = new ManagementObjectSearcher(consulta))
+                {
+                    foreach (ManagementObject item in buscador.Get())
                     {
-                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Status", "Sensores térmicos restritos pelo fabricante do hardware ou privilégios de Administrador requeridos." }));
+                        string nomeMonitor = item["Caption"]?.ToString();
+                        if (!string.IsNullOrEmpty(nomeMonitor) && nomeMonitor != "Monitor Genérico PnP")
+                        {
+                            listaDetalhes.Items.Add(new ListViewItem(new[] { "Modelo do Painel", nomeMonitor }));
+                            listaDetalhes.Items.Add(new ListViewItem(new[] { "Fabricante Registrado", item["MonitorManufacturer"]?.ToString() }));
+                            listaDetalhes.Items.Add(new ListViewItem(""));
+                        }
                     }
                 }
             }
-            catch (ManagementException)
-            {
-                listaDetalhes.Items.Add(new ListViewItem(new[] { "Aviso de Permissão", "A leitura nativa de temperaturas exige que o aplicativo seja executado como Administrador." }));
-            }
-            catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Sensores)", erro.Message })); }
+            catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Monitores)", erro.Message })); }
         }
 
         private void CarregarDadosProcessos()
@@ -284,7 +336,6 @@ namespace SystemInfoApp
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Processos)", erro.Message })); }
         }
 
-        // --- BATERIA E ENERGIA (ATUALIZADA COM SAÚDE MATEMÁTICA) ---
         private void CarregarDadosBateria()
         {
             try
@@ -322,7 +373,6 @@ namespace SystemInfoApp
                             if (capacidadeFabrica > 0)
                             {
                                 double saudePorcentagem = Math.Round(((double)capacidadeMaximaAtual / capacidadeFabrica) * 100, 2);
-
                                 string diagnosticoSaude = saudePorcentagem >= 80 ? "Boa (Saudável)" :
                                                           saudePorcentagem >= 50 ? "Atenção (Desgastada)" : "Crítica (Substituição Recomendada)";
 
@@ -595,7 +645,6 @@ namespace SystemInfoApp
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (RAM)", erro.Message })); }
         }
 
-        // --- ARMAZENAMENTO (ATUALIZADA COM STATUS SMART E SAÚDE) ---
         private void CarregarDadosArmazenamento()
         {
             try
@@ -754,6 +803,50 @@ namespace SystemInfoApp
                 }
             }
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Áudio)", erro.Message })); }
+        }
+
+        // --- NOVA FUNÇÃO: IMPRESSORAS E FAX ---
+        private void CarregarDadosImpressoras()
+        {
+            try
+            {
+                listaDetalhes.Items.Add(new ListViewItem("--- IMPRESSORAS E DISPOSITIVOS DE FAX ---"));
+                ObjectQuery consulta = new ObjectQuery("SELECT Name, Default, PortName, Shared FROM Win32_Printer");
+
+                using (ManagementObjectSearcher buscador = new ManagementObjectSearcher(consulta))
+                {
+                    int contador = 1;
+                    foreach (ManagementObject item in buscador.Get())
+                    {
+                        string nome = item["Name"]?.ToString();
+                        if (!string.IsNullOrEmpty(nome))
+                        {
+                            listaDetalhes.Items.Add(new ListViewItem(new[] { $"Dispositivo {contador}", nome }));
+
+                            bool padrao = item["Default"] != null && Convert.ToBoolean(item["Default"]);
+                            listaDetalhes.Items.Add(new ListViewItem(new[] { "  Impressora Padrão", padrao ? "Sim (Principal)" : "Não" }));
+
+                            string porta = item["PortName"]?.ToString();
+                            if (!string.IsNullOrEmpty(porta))
+                            {
+                                listaDetalhes.Items.Add(new ListViewItem(new[] { "  Porta de Comunicação", porta }));
+                            }
+
+                            bool compartilhada = item["Shared"] != null && Convert.ToBoolean(item["Shared"]);
+                            listaDetalhes.Items.Add(new ListViewItem(new[] { "  Compartilhada na Rede", compartilhada ? "Sim" : "Não" }));
+
+                            listaDetalhes.Items.Add(new ListViewItem(""));
+                            contador++;
+                        }
+                    }
+
+                    if (contador == 1)
+                    {
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Status", "Nenhuma impressora instalada no sistema." }));
+                    }
+                }
+            }
+            catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Impressoras)", erro.Message })); }
         }
     }
 }

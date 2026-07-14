@@ -20,7 +20,7 @@ namespace SystemInfoApp
         private ListView listaDetalhes;
         private Button botaoSalvar;
         private System.Windows.Forms.Timer temporizadorMonitoramento;
-        private ProgressBar barraProgresso; // Componente visual adicionado
+        private ProgressBar barraProgresso;
 
         public Form1()
         {
@@ -63,6 +63,7 @@ namespace SystemInfoApp
 
             TreeNode noSoftware = menuLateral.Nodes.Add("Software");
             noSoftware.Nodes.Add("Sistema Operacional");
+            noSoftware.Nodes.Add("Programas Instalados"); // Nova funcionalidade mapeada
             noSoftware.Nodes.Add("Processos em Execução");
             noSoftware.Nodes.Add("Contas de Usuário");
             noSoftware.Nodes.Add("Serviços do Sistema");
@@ -84,7 +85,6 @@ namespace SystemInfoApp
             listaDetalhes.Columns.Add("Valor", 450);
             listaDetalhes.Resize += (sender, evento) => AjustarColunas();
 
-            // Configuração física da barra de progresso no painel de detalhes
             barraProgresso = new ProgressBar();
             barraProgresso.Dock = DockStyle.Bottom;
             barraProgresso.Height = 15;
@@ -93,7 +93,6 @@ namespace SystemInfoApp
             conteinerDivisor.Panel1.Controls.Add(botaoSalvar);
             conteinerDivisor.Panel1.Controls.Add(menuLateral);
 
-            // A ordem de inserção fixa a barra no rodapé da tabela
             conteinerDivisor.Panel2.Controls.Add(barraProgresso);
             conteinerDivisor.Panel2.Controls.Add(listaDetalhes);
 
@@ -145,13 +144,11 @@ namespace SystemInfoApp
         {
             temporizadorMonitoramento.Stop();
 
-            // Animação inicial genérica ativada
             barraProgresso.Style = ProgressBarStyle.Marquee;
             barraProgresso.Value = 0;
             barraProgresso.Visible = true;
             Application.DoEvents();
 
-            // Aplicação global contra intermitência de tela
             listaDetalhes.BeginUpdate();
 
             if (e.Node.Text != "Monitoramento de CPU e RAM")
@@ -162,7 +159,7 @@ namespace SystemInfoApp
             if (e.Node.Text == "Monitoramento de CPU e RAM")
             {
                 listaDetalhes.Items.Clear();
-                listaDetalhes.EndUpdate(); // O Timer interno cuidará das atualizações
+                listaDetalhes.EndUpdate();
                 await CarregarDadosTempoRealAsync();
                 temporizadorMonitoramento.Start();
             }
@@ -180,15 +177,16 @@ namespace SystemInfoApp
                 else if (e.Node.Text == "Impressoras e Fax") CarregarDadosImpressoras();
                 else if (e.Node.Text == "Bateria e Energia") CarregarDadosBateria();
                 else if (e.Node.Text == "Sistema Operacional") CarregarDadosSistemaOperacional();
+                else if (e.Node.Text == "Programas Instalados") CarregarDadosProgramas(); // Direcionamento ativado
                 else if (e.Node.Text == "Contas de Usuário") CarregarDadosUsuarios();
                 else if (e.Node.Text == "Processos em Execução") CarregarDadosProcessos();
                 else if (e.Node.Text == "Serviços do Sistema") CarregarDadosServicos();
                 else if (e.Node.Text == "Adaptadores de Conexão") CarregarDadosRede();
 
-                listaDetalhes.EndUpdate(); // Conclusão de desenho da tabela
+                listaDetalhes.EndUpdate();
             }
 
-            barraProgresso.Visible = false; // Desativa a indicação visual de carga
+            barraProgresso.Visible = false;
             AjustarColunas();
         }
 
@@ -854,14 +852,12 @@ namespace SystemInfoApp
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Impressoras)", erro.Message })); }
         }
 
-        // --- MÓDULO EXATO DE PROCESSOS (CONECTADO À BARRA DE PROGRESSO) ---
         private void CarregarDadosProcessos()
         {
             try
             {
                 Process[] todosProcessos = Process.GetProcesses();
 
-                // Configuração matemática da barra com limites absolutos
                 barraProgresso.Style = ProgressBarStyle.Continuous;
                 barraProgresso.Maximum = todosProcessos.Length;
                 barraProgresso.Value = 0;
@@ -876,7 +872,6 @@ namespace SystemInfoApp
                     int threadsCpu = processo.Threads.Count;
                     cacheLinhas.Add(new ListViewItem(new[] { processo.ProcessName, $"{usoRamMB} MB RAM | {threadsCpu} Threads no Processador" }));
 
-                    // Incremento forçado da UI
                     barraProgresso.Value++;
                     Application.DoEvents();
                 }
@@ -890,7 +885,6 @@ namespace SystemInfoApp
             finally { barraProgresso.Visible = false; }
         }
 
-        // --- NOVO MÓDULO: SERVIÇOS DO SISTEMA (CONECTADO À BARRA DE PROGRESSO) ---
         private void CarregarDadosServicos()
         {
             try
@@ -902,7 +896,6 @@ namespace SystemInfoApp
                 {
                     ManagementObjectCollection colecao = buscador.Get();
 
-                    // Ajuste da barra contínua de acordo com o total extraído
                     barraProgresso.Style = ProgressBarStyle.Continuous;
                     barraProgresso.Maximum = colecao.Count;
                     barraProgresso.Value = 0;
@@ -927,7 +920,6 @@ namespace SystemInfoApp
                             cacheLinhas.Add(new ListViewItem(new[] { nome, statusFormatado }));
                         }
 
-                        // Progresso contínuo renderizado durante o loop
                         barraProgresso.Value++;
                         Application.DoEvents();
                     }
@@ -936,14 +928,13 @@ namespace SystemInfoApp
                     listaDetalhes.Items.Add(new ListViewItem(new[] { "Serviços Parados (Inativos)", contadorInativos.ToString() }));
                     listaDetalhes.Items.Add(new ListViewItem(""));
                     listaDetalhes.Items.Add(new ListViewItem(new[] { "NOME DO SERVIÇO", "STATUS E MODO DE INICIALIZAÇÃO" }));
-                    listaDetalhes.Items.AddRange(cacheLinhas.ToArray()); // Inserção compacta final
+                    listaDetalhes.Items.AddRange(cacheLinhas.ToArray());
                 }
             }
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Serviços)", erro.Message })); }
             finally { barraProgresso.Visible = false; }
         }
 
-        // --- NOVO MÓDULO: CONTAS DE USUÁRIO ---
         private void CarregarDadosUsuarios()
         {
             try
@@ -986,6 +977,68 @@ namespace SystemInfoApp
                 }
             }
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Usuários)", erro.Message })); }
+        }
+
+        // --- NOVO MÓDULO: PROGRAMAS INSTALADOS ---
+        private void CarregarDadosProgramas()
+        {
+            try
+            {
+                listaDetalhes.Items.Add(new ListViewItem("--- SOFTWARES INSTALADOS NO SISTEMA ---"));
+
+                List<ListViewItem> cacheLinhas = new List<ListViewItem>();
+                List<string> caminhosRegistro = new List<string>
+                {
+                    @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                    @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+                };
+
+                foreach (string caminho in caminhosRegistro)
+                {
+                    using (RegistryKey chaveBase = Registry.LocalMachine.OpenSubKey(caminho))
+                    {
+                        if (chaveBase != null)
+                        {
+                            string[] subChaves = chaveBase.GetSubKeyNames();
+
+                            barraProgresso.Style = ProgressBarStyle.Continuous;
+                            barraProgresso.Maximum = subChaves.Length > 0 ? subChaves.Length : 100;
+                            barraProgresso.Value = 0;
+                            barraProgresso.Visible = true;
+
+                            foreach (string subChave in subChaves)
+                            {
+                                using (RegistryKey programa = chaveBase.OpenSubKey(subChave))
+                                {
+                                    if (programa != null)
+                                    {
+                                        string nome = programa.GetValue("DisplayName")?.ToString();
+                                        if (!string.IsNullOrEmpty(nome))
+                                        {
+                                            string versao = programa.GetValue("DisplayVersion")?.ToString() ?? "Desconhecida";
+                                            string desenvolvedor = programa.GetValue("Publisher")?.ToString() ?? "Não informado";
+
+                                            cacheLinhas.Add(new ListViewItem(new[] { nome, $"Versão: {versao} | Desenvolvedor: {desenvolvedor}" }));
+                                        }
+                                    }
+                                }
+
+                                if (barraProgresso.Value < barraProgresso.Maximum) barraProgresso.Value++;
+                                if (barraProgresso.Value % 10 == 0) Application.DoEvents();
+                            }
+                        }
+                    }
+                }
+
+                var linhasOrdenadas = cacheLinhas.OrderBy(l => l.Text).ToArray();
+
+                listaDetalhes.Items.Add(new ListViewItem(new[] { "Total de Programas Encontrados", linhasOrdenadas.Length.ToString() }));
+                listaDetalhes.Items.Add(new ListViewItem(""));
+                listaDetalhes.Items.Add(new ListViewItem(new[] { "NOME DO SOFTWARE", "DETALHES (VERSÃO E FABRICANTE)" }));
+                listaDetalhes.Items.AddRange(linhasOrdenadas);
+            }
+            catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Programas)", erro.Message })); }
+            finally { barraProgresso.Visible = false; }
         }
     }
 }

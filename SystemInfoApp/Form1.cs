@@ -63,7 +63,8 @@ namespace SystemInfoApp
 
             TreeNode noSoftware = menuLateral.Nodes.Add("Software");
             noSoftware.Nodes.Add("Sistema Operacional");
-            noSoftware.Nodes.Add("Programas Instalados"); // Nova funcionalidade mapeada
+            noSoftware.Nodes.Add("Programas Instalados");
+            noSoftware.Nodes.Add("Programas de Inicialização"); // Nova funcionalidade adicionada
             noSoftware.Nodes.Add("Processos em Execução");
             noSoftware.Nodes.Add("Contas de Usuário");
             noSoftware.Nodes.Add("Serviços do Sistema");
@@ -177,7 +178,8 @@ namespace SystemInfoApp
                 else if (e.Node.Text == "Impressoras e Fax") CarregarDadosImpressoras();
                 else if (e.Node.Text == "Bateria e Energia") CarregarDadosBateria();
                 else if (e.Node.Text == "Sistema Operacional") CarregarDadosSistemaOperacional();
-                else if (e.Node.Text == "Programas Instalados") CarregarDadosProgramas(); // Direcionamento ativado
+                else if (e.Node.Text == "Programas Instalados") CarregarDadosProgramas();
+                else if (e.Node.Text == "Programas de Inicialização") CarregarDadosInicializacao(); // Mapeamento ativado
                 else if (e.Node.Text == "Contas de Usuário") CarregarDadosUsuarios();
                 else if (e.Node.Text == "Processos em Execução") CarregarDadosProcessos();
                 else if (e.Node.Text == "Serviços do Sistema") CarregarDadosServicos();
@@ -979,7 +981,6 @@ namespace SystemInfoApp
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Usuários)", erro.Message })); }
         }
 
-        // --- NOVO MÓDULO: PROGRAMAS INSTALADOS ---
         private void CarregarDadosProgramas()
         {
             try
@@ -1039,6 +1040,50 @@ namespace SystemInfoApp
             }
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Programas)", erro.Message })); }
             finally { barraProgresso.Visible = false; }
+        }
+
+        // --- NOVA FUNÇÃO: PROGRAMAS DE INICIALIZAÇÃO ---
+        private void CarregarDadosInicializacao()
+        {
+            try
+            {
+                listaDetalhes.Items.Add(new ListViewItem("--- PROGRAMAS QUE INICIAM COM O WINDOWS ---"));
+                ObjectQuery consulta = new ObjectQuery("SELECT Name, Command, Location, User FROM Win32_StartupCommand");
+
+                using (ManagementObjectSearcher buscador = new ManagementObjectSearcher(consulta))
+                {
+                    int contador = 1;
+                    foreach (ManagementObject item in buscador.Get())
+                    {
+                        string nome = item["Name"]?.ToString();
+                        if (!string.IsNullOrEmpty(nome))
+                        {
+                            listaDetalhes.Items.Add(new ListViewItem(new[] { $"Entrada {contador}: {nome}", item["Command"]?.ToString() }));
+
+                            string local = item["Location"]?.ToString();
+                            if (!string.IsNullOrEmpty(local))
+                            {
+                                listaDetalhes.Items.Add(new ListViewItem(new[] { "  Origem do Gatilho", local }));
+                            }
+
+                            string usuario = item["User"]?.ToString();
+                            if (!string.IsNullOrEmpty(usuario))
+                            {
+                                listaDetalhes.Items.Add(new ListViewItem(new[] { "  Escopo de Usuário", usuario }));
+                            }
+
+                            listaDetalhes.Items.Add(new ListViewItem(""));
+                            contador++;
+                        }
+                    }
+
+                    if (contador == 1)
+                    {
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Status", "Nenhum programa de inicialização detectado." }));
+                    }
+                }
+            }
+            catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Inicialização)", erro.Message })); }
         }
     }
 }

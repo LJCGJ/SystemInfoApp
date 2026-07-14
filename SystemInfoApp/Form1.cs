@@ -8,6 +8,7 @@ using System.Windows.Forms;
 using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Linq;
+using Microsoft.Win32; // Biblioteca inserida para extrair a Chave de Ativação (Product Key) e Versão (22H2)
 
 namespace SystemInfoApp
 {
@@ -22,7 +23,7 @@ namespace SystemInfoApp
         public Form1()
         {
             this.Text = "Painel de Informações do Sistema";
-            this.MinimumSize = new Size(800, 500);
+            this.MinimumSize = new Size(850, 550);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.WindowState = FormWindowState.Maximized;
             MontarInterfaceViaCodigo();
@@ -213,7 +214,6 @@ namespace SystemInfoApp
             catch (Exception) { }
         }
 
-        // LEITURA DE PROCESSOS COM DADOS DE CPU
         private void CarregarDadosProcessos()
         {
             try
@@ -229,15 +229,11 @@ namespace SystemInfoApp
                 foreach (Process processo in processosOrdenados)
                 {
                     long usoRamMB = processo.WorkingSet64 / (1024 * 1024);
-                    int threadsCpu = processo.Threads.Count; // Leitura estrita de linhas em execução no processador
-
+                    int threadsCpu = processo.Threads.Count;
                     listaDetalhes.Items.Add(new ListViewItem(new[] { processo.ProcessName, $"{usoRamMB} MB RAM | {threadsCpu} Threads no Processador" }));
                 }
             }
-            catch (Exception erro)
-            {
-                listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Processos)", erro.Message }));
-            }
+            catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Processos)", erro.Message })); }
         }
 
         private void CarregarDadosBateria()
@@ -257,7 +253,81 @@ namespace SystemInfoApp
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Bateria)", erro.Message })); }
         }
 
-        // LEITURA DE PROCESSADOR COM TRATAMENTO DE MULTIPLOS SOKETS
+        // --- SISTEMA OPERACIONAL (MAXIMIZADO) ---
+        private void CarregarDadosSistemaOperacional()
+        {
+            try
+            {
+                // 1. Extração via WMI
+                ObjectQuery consultaOS = new ObjectQuery("SELECT Caption, CSDVersion, BuildNumber, InstallDate, SerialNumber, OSArchitecture, SystemDirectory FROM Win32_OperatingSystem");
+                using (ManagementObjectSearcher buscadorOS = new ManagementObjectSearcher(consultaOS))
+                {
+                    foreach (ManagementObject os in buscadorOS.Get())
+                    {
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Edição do Windows", os["Caption"]?.ToString() }));
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Arquitetura do Sistema", os["OSArchitecture"]?.ToString() }));
+
+                        string servicePack = os["CSDVersion"]?.ToString();
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Service Pack (servesipec)", string.IsNullOrEmpty(servicePack) ? "Nenhum" : servicePack }));
+
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Número da Compilação (Build)", os["BuildNumber"]?.ToString() }));
+
+                        if (os["InstallDate"] != null)
+                        {
+                            DateTime dataInstalacao = ManagementDateTimeConverter.ToDateTime(os["InstallDate"].ToString());
+                            listaDetalhes.Items.Add(new ListViewItem(new[] { "Data de Instalação", dataInstalacao.ToString("dd/MM/yyyy HH:mm:ss") }));
+                        }
+
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Número de Série do SO", os["SerialNumber"]?.ToString() }));
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Diretório do Sistema", os["SystemDirectory"]?.ToString() }));
+                    }
+                }
+
+                // 2. Extração via Registro (Versão Comercial "verção h2so")
+                try
+                {
+                    using (RegistryKey chave = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion"))
+                    {
+                        if (chave != null)
+                        {
+                            string versaoComercial = chave.GetValue("DisplayVersion")?.ToString();
+                            if (!string.IsNullOrEmpty(versaoComercial))
+                            {
+                                listaDetalhes.Items.Add(new ListViewItem(new[] { "Versão de Lançamento (verção)", versaoComercial }));
+                            }
+                        }
+                    }
+                }
+                catch { } // Erro de acesso ao registro é ignorado silenciosamente
+
+                // 3. Extração via Registro (Chave de Ativação "igual o siw")
+                try
+                {
+                    using (RegistryKey chave = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\SoftwareProtectionPlatform"))
+                    {
+                        if (chave != null)
+                        {
+                            string chaveProduto = chave.GetValue("BackupProductKeyDefault")?.ToString();
+                            if (!string.IsNullOrEmpty(chaveProduto))
+                            {
+                                listaDetalhes.Items.Add(new ListViewItem(new[] { "Chave de Ativação (Product Key)", chaveProduto }));
+                            }
+                        }
+                    }
+                }
+                catch { }
+
+                listaDetalhes.Items.Add(new ListViewItem(""));
+                listaDetalhes.Items.Add(new ListViewItem(new[] { "Nome do Computador", Environment.MachineName }));
+                listaDetalhes.Items.Add(new ListViewItem(new[] { "Usuário Atual", Environment.UserName }));
+
+                TimeSpan tempoLigado = TimeSpan.FromMilliseconds(Environment.TickCount64);
+                string textoUptime = $"{tempoLigado.Days} dias, {tempoLigado.Hours} horas, {tempoLigado.Minutes} minutos";
+                listaDetalhes.Items.Add(new ListViewItem(new[] { "Tempo Ligado (Uptime)", textoUptime }));
+            }
+            catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (OS)", erro.Message })); }
+        }
+
         private void CarregarDadosProcessador()
         {
             try
@@ -265,7 +335,7 @@ namespace SystemInfoApp
                 ObjectQuery consulta = new ObjectQuery("SELECT Name, Manufacturer, NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed, L2CacheSize, L3CacheSize, SocketDesignation FROM Win32_Processor");
                 using (ManagementObjectSearcher buscador = new ManagementObjectSearcher(consulta))
                 {
-                    int contadorSocket = 1; // Contador para servidores com mais de um processador
+                    int contadorSocket = 1;
 
                     foreach (ManagementObject item in buscador.Get())
                     {
@@ -315,7 +385,7 @@ namespace SystemInfoApp
         {
             try
             {
-                ObjectQuery consulta = new ObjectQuery("SELECT Name, AdapterRAM, DriverVersion, VideoProcessor, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate FROM Win32_VideoController");
+                ObjectQuery consulta = new ObjectQuery("SELECT Name, AdapterRAM, DriverVersion, VideoProcessor, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate, VideoArchitecture FROM Win32_VideoController");
                 using (ManagementObjectSearcher buscador = new ManagementObjectSearcher(consulta))
                 {
                     foreach (ManagementObject item in buscador.Get())
@@ -343,11 +413,12 @@ namespace SystemInfoApp
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (GPU)", erro.Message })); }
         }
 
+        // --- MEMÓRIA RAM (EXPANDIDA PARA DETECTAR O TIPO DDR EXATO) ---
         private void CarregarDadosMemoriaRAM()
         {
             try
             {
-                ObjectQuery consulta = new ObjectQuery("SELECT Capacity, Speed, Manufacturer, PartNumber FROM Win32_PhysicalMemory");
+                ObjectQuery consulta = new ObjectQuery("SELECT Capacity, Speed, Manufacturer, PartNumber, SMBIOSMemoryType FROM Win32_PhysicalMemory");
                 using (ManagementObjectSearcher buscador = new ManagementObjectSearcher(consulta))
                 {
                     long memoriaTotalBytes = 0;
@@ -359,7 +430,19 @@ namespace SystemInfoApp
                         long capacidadeBytes = Convert.ToInt64(item["Capacity"]);
                         memoriaTotalBytes += capacidadeBytes;
 
+                        string tipoMemoria = "Desconhecido";
+                        if (item["SMBIOSMemoryType"] != null)
+                        {
+                            int codigoTipo = Convert.ToInt32(item["SMBIOSMemoryType"]);
+                            if (codigoTipo == 20) tipoMemoria = "DDR";
+                            else if (codigoTipo == 21) tipoMemoria = "DDR2";
+                            else if (codigoTipo == 24) tipoMemoria = "DDR3";
+                            else if (codigoTipo == 26) tipoMemoria = "DDR4";
+                            else if (codigoTipo == 34) tipoMemoria = "DDR5";
+                        }
+
                         listaDetalhes.Items.Add(new ListViewItem(new[] { "Capacidade", (capacidadeBytes / (1024 * 1024 * 1024)) + " GB" }));
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Tecnologia", tipoMemoria }));
                         listaDetalhes.Items.Add(new ListViewItem(new[] { "Frequência (Velocidade)", item["Speed"]?.ToString() + " MHz" }));
                         listaDetalhes.Items.Add(new ListViewItem(new[] { "Fabricante", item["Manufacturer"]?.ToString() }));
                         listaDetalhes.Items.Add(new ListViewItem(new[] { "Número de Série (Part Number)", item["PartNumber"]?.ToString().Trim() }));
@@ -372,17 +455,19 @@ namespace SystemInfoApp
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (RAM)", erro.Message })); }
         }
 
+        // --- ARMAZENAMENTO (EXPANDIDO PARA DETECTAR NÚMERO DE SÉRIE E TIPO DE PARTIÇÃO) ---
         private void CarregarDadosArmazenamento()
         {
             try
             {
-                ObjectQuery consultaDiscos = new ObjectQuery("SELECT Model, InterfaceType, Size FROM Win32_DiskDrive");
+                ObjectQuery consultaDiscos = new ObjectQuery("SELECT Model, InterfaceType, Size, SerialNumber FROM Win32_DiskDrive");
                 using (ManagementObjectSearcher buscadorDiscos = new ManagementObjectSearcher(consultaDiscos))
                 {
                     listaDetalhes.Items.Add(new ListViewItem("--- DISCOS FÍSICOS (HARDWARE) ---"));
                     foreach (ManagementObject discoFisico in buscadorDiscos.Get())
                     {
                         listaDetalhes.Items.Add(new ListViewItem(new[] { "Modelo do Disco", discoFisico["Model"]?.ToString() }));
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Número de Série", discoFisico["SerialNumber"]?.ToString().Trim() }));
                         listaDetalhes.Items.Add(new ListViewItem(new[] { "Tipo de Interface", discoFisico["InterfaceType"]?.ToString() }));
                         if (discoFisico["Size"] != null)
                         {
@@ -401,7 +486,7 @@ namespace SystemInfoApp
                     {
                         long espacoTotalGB = disco.TotalSize / (1024 * 1024 * 1024);
                         long espacoLivreGB = disco.AvailableFreeSpace / (1024 * 1024 * 1024);
-                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Unidade " + disco.Name, "Formato: " + disco.DriveFormat }));
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "Unidade " + disco.Name, "Sistema de Arquivos: " + disco.DriveFormat }));
                         listaDetalhes.Items.Add(new ListViewItem(new[] { "  Tamanho Total", espacoTotalGB + " GB" }));
                         listaDetalhes.Items.Add(new ListViewItem(new[] { "  Espaço Livre", espacoLivreGB + " GB" }));
                         listaDetalhes.Items.Add(new ListViewItem(""));
@@ -409,23 +494,6 @@ namespace SystemInfoApp
                 }
             }
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Armazenamento)", erro.Message })); }
-        }
-
-        private void CarregarDadosSistemaOperacional()
-        {
-            try
-            {
-                listaDetalhes.Items.Add(new ListViewItem(new[] { "Nome do Computador", Environment.MachineName }));
-                listaDetalhes.Items.Add(new ListViewItem(new[] { "Usuário Atual", Environment.UserName }));
-                listaDetalhes.Items.Add(new ListViewItem(new[] { "Versão do Núcleo", Environment.OSVersion.ToString() }));
-                listaDetalhes.Items.Add(new ListViewItem(new[] { "Arquitetura do Sistema", Environment.Is64BitOperatingSystem ? "64 Bits" : "32 Bits" }));
-                listaDetalhes.Items.Add(new ListViewItem(new[] { "Diretório do Sistema", Environment.SystemDirectory }));
-
-                TimeSpan tempoLigado = TimeSpan.FromMilliseconds(Environment.TickCount64);
-                string textoUptime = $"{tempoLigado.Days} dias, {tempoLigado.Hours} horas, {tempoLigado.Minutes} minutos";
-                listaDetalhes.Items.Add(new ListViewItem(new[] { "Tempo Ligado (Uptime)", textoUptime }));
-            }
-            catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (OS)", erro.Message })); }
         }
 
         private void CarregarDadosRede()

@@ -20,6 +20,7 @@ namespace SystemInfoApp
         private ListView listaDetalhes;
         private Button botaoSalvar;
         private System.Windows.Forms.Timer temporizadorMonitoramento;
+        private ProgressBar barraProgresso; // Componente visual adicionado
 
         public Form1()
         {
@@ -57,12 +58,14 @@ namespace SystemInfoApp
             noHardware.Nodes.Add("Armazenamento");
             noHardware.Nodes.Add("Dispositivos USB");
             noHardware.Nodes.Add("Dispositivos de Áudio");
-            noHardware.Nodes.Add("Impressoras e Fax"); // Nova funcionalidade de hardware inserida
+            noHardware.Nodes.Add("Impressoras e Fax");
             noHardware.Nodes.Add("Bateria e Energia");
 
             TreeNode noSoftware = menuLateral.Nodes.Add("Software");
             noSoftware.Nodes.Add("Sistema Operacional");
             noSoftware.Nodes.Add("Processos em Execução");
+            noSoftware.Nodes.Add("Contas de Usuário");
+            noSoftware.Nodes.Add("Serviços do Sistema");
 
             TreeNode noRede = menuLateral.Nodes.Add("Rede");
             noRede.Nodes.Add("Adaptadores de Conexão");
@@ -79,13 +82,21 @@ namespace SystemInfoApp
             listaDetalhes.Columns.Clear();
             listaDetalhes.Columns.Add("Propriedade", 350);
             listaDetalhes.Columns.Add("Valor", 450);
-
             listaDetalhes.Resize += (sender, evento) => AjustarColunas();
+
+            // Configuração física da barra de progresso no painel de detalhes
+            barraProgresso = new ProgressBar();
+            barraProgresso.Dock = DockStyle.Bottom;
+            barraProgresso.Height = 15;
+            barraProgresso.Visible = false;
 
             conteinerDivisor.Panel1.Controls.Add(botaoSalvar);
             conteinerDivisor.Panel1.Controls.Add(menuLateral);
 
+            // A ordem de inserção fixa a barra no rodapé da tabela
+            conteinerDivisor.Panel2.Controls.Add(barraProgresso);
             conteinerDivisor.Panel2.Controls.Add(listaDetalhes);
+
             this.Controls.Add(conteinerDivisor);
 
             temporizadorMonitoramento = new System.Windows.Forms.Timer();
@@ -126,13 +137,22 @@ namespace SystemInfoApp
                     }
                     MessageBox.Show("Relatório salvo com sucesso!", "Sucesso", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
-                catch (Exception erro) { }
+                catch (Exception) { }
             }
         }
 
         private async Task MenuLateral_AfterSelectAsync(TreeViewEventArgs e)
         {
             temporizadorMonitoramento.Stop();
+
+            // Animação inicial genérica ativada
+            barraProgresso.Style = ProgressBarStyle.Marquee;
+            barraProgresso.Value = 0;
+            barraProgresso.Visible = true;
+            Application.DoEvents();
+
+            // Aplicação global contra intermitência de tela
+            listaDetalhes.BeginUpdate();
 
             if (e.Node.Text != "Monitoramento de CPU e RAM")
             {
@@ -142,24 +162,33 @@ namespace SystemInfoApp
             if (e.Node.Text == "Monitoramento de CPU e RAM")
             {
                 listaDetalhes.Items.Clear();
+                listaDetalhes.EndUpdate(); // O Timer interno cuidará das atualizações
                 await CarregarDadosTempoRealAsync();
                 temporizadorMonitoramento.Start();
             }
-            else if (e.Node.Text == "Sensores Térmicos (Temperaturas)") CarregarDadosTemperaturas();
-            else if (e.Node.Text == "Processador (CPU)") CarregarDadosProcessador();
-            else if (e.Node.Text == "Placa-Mãe e BIOS") CarregarDadosPlacaMae();
-            else if (e.Node.Text == "Placa de Vídeo (GPU)") CarregarDadosPlacaDeVideo();
-            else if (e.Node.Text == "Telas e Monitores") CarregarDadosMonitores();
-            else if (e.Node.Text == "Memória RAM") CarregarDadosMemoriaRAM();
-            else if (e.Node.Text == "Armazenamento") CarregarDadosArmazenamento();
-            else if (e.Node.Text == "Dispositivos USB") CarregarDadosUSB();
-            else if (e.Node.Text == "Dispositivos de Áudio") CarregarDadosAudio();
-            else if (e.Node.Text == "Impressoras e Fax") CarregarDadosImpressoras(); // Mapeamento da nova função
-            else if (e.Node.Text == "Bateria e Energia") CarregarDadosBateria();
-            else if (e.Node.Text == "Sistema Operacional") CarregarDadosSistemaOperacional();
-            else if (e.Node.Text == "Processos em Execução") CarregarDadosProcessos();
-            else if (e.Node.Text == "Adaptadores de Conexão") CarregarDadosRede();
+            else
+            {
+                if (e.Node.Text == "Sensores Térmicos (Temperaturas)") CarregarDadosTemperaturas();
+                else if (e.Node.Text == "Processador (CPU)") CarregarDadosProcessador();
+                else if (e.Node.Text == "Placa-Mãe e BIOS") CarregarDadosPlacaMae();
+                else if (e.Node.Text == "Placa de Vídeo (GPU)") CarregarDadosPlacaDeVideo();
+                else if (e.Node.Text == "Telas e Monitores") CarregarDadosMonitores();
+                else if (e.Node.Text == "Memória RAM") CarregarDadosMemoriaRAM();
+                else if (e.Node.Text == "Armazenamento") CarregarDadosArmazenamento();
+                else if (e.Node.Text == "Dispositivos USB") CarregarDadosUSB();
+                else if (e.Node.Text == "Dispositivos de Áudio") CarregarDadosAudio();
+                else if (e.Node.Text == "Impressoras e Fax") CarregarDadosImpressoras();
+                else if (e.Node.Text == "Bateria e Energia") CarregarDadosBateria();
+                else if (e.Node.Text == "Sistema Operacional") CarregarDadosSistemaOperacional();
+                else if (e.Node.Text == "Contas de Usuário") CarregarDadosUsuarios();
+                else if (e.Node.Text == "Processos em Execução") CarregarDadosProcessos();
+                else if (e.Node.Text == "Serviços do Sistema") CarregarDadosServicos();
+                else if (e.Node.Text == "Adaptadores de Conexão") CarregarDadosRede();
 
+                listaDetalhes.EndUpdate(); // Conclusão de desenho da tabela
+            }
+
+            barraProgresso.Visible = false; // Desativa a indicação visual de carga
             AjustarColunas();
         }
 
@@ -190,9 +219,7 @@ namespace SystemInfoApp
                     using (ManagementObjectSearcher buscadorCpu = new ManagementObjectSearcher(consultaCpu))
                     {
                         foreach (ManagementObject item in buscadorCpu.Get())
-                        {
                             porcentagemCpu = item["LoadPercentage"]?.ToString() + "%";
-                        }
                     }
 
                     ObjectQuery consultaRam = new ObjectQuery("SELECT TotalVisibleMemorySize, FreePhysicalMemory FROM Win32_OperatingSystem");
@@ -313,27 +340,6 @@ namespace SystemInfoApp
                 }
             }
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Monitores)", erro.Message })); }
-        }
-
-        private void CarregarDadosProcessos()
-        {
-            try
-            {
-                Process[] todosProcessos = Process.GetProcesses();
-                listaDetalhes.Items.Add(new ListViewItem(new[] { "Total de Processos Ativos", todosProcessos.Length.ToString() }));
-                listaDetalhes.Items.Add(new ListViewItem(""));
-                listaDetalhes.Items.Add(new ListViewItem(new[] { "NOME DO PROCESSO", "USO DE RECURSOS (RAM E CPU)" }));
-
-                var processosOrdenados = todosProcessos.OrderByDescending(p => p.WorkingSet64).Take(50);
-
-                foreach (Process processo in processosOrdenados)
-                {
-                    long usoRamMB = processo.WorkingSet64 / (1024 * 1024);
-                    int threadsCpu = processo.Threads.Count;
-                    listaDetalhes.Items.Add(new ListViewItem(new[] { processo.ProcessName, $"{usoRamMB} MB RAM | {threadsCpu} Threads no Processador" }));
-                }
-            }
-            catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Processos)", erro.Message })); }
         }
 
         private void CarregarDadosBateria()
@@ -805,7 +811,6 @@ namespace SystemInfoApp
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Áudio)", erro.Message })); }
         }
 
-        // --- NOVA FUNÇÃO: IMPRESSORAS E FAX ---
         private void CarregarDadosImpressoras()
         {
             try
@@ -847,6 +852,140 @@ namespace SystemInfoApp
                 }
             }
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Impressoras)", erro.Message })); }
+        }
+
+        // --- MÓDULO EXATO DE PROCESSOS (CONECTADO À BARRA DE PROGRESSO) ---
+        private void CarregarDadosProcessos()
+        {
+            try
+            {
+                Process[] todosProcessos = Process.GetProcesses();
+
+                // Configuração matemática da barra com limites absolutos
+                barraProgresso.Style = ProgressBarStyle.Continuous;
+                barraProgresso.Maximum = todosProcessos.Length;
+                barraProgresso.Value = 0;
+                barraProgresso.Visible = true;
+
+                List<ListViewItem> cacheLinhas = new List<ListViewItem>();
+                var processosOrdenados = todosProcessos.OrderByDescending(p => p.WorkingSet64).Take(50);
+
+                foreach (Process processo in processosOrdenados)
+                {
+                    long usoRamMB = processo.WorkingSet64 / (1024 * 1024);
+                    int threadsCpu = processo.Threads.Count;
+                    cacheLinhas.Add(new ListViewItem(new[] { processo.ProcessName, $"{usoRamMB} MB RAM | {threadsCpu} Threads no Processador" }));
+
+                    // Incremento forçado da UI
+                    barraProgresso.Value++;
+                    Application.DoEvents();
+                }
+
+                listaDetalhes.Items.Add(new ListViewItem(new[] { "Total de Processos Ativos", todosProcessos.Length.ToString() }));
+                listaDetalhes.Items.Add(new ListViewItem(""));
+                listaDetalhes.Items.Add(new ListViewItem(new[] { "NOME DO PROCESSO", "USO DE RECURSOS (RAM E CPU)" }));
+                listaDetalhes.Items.AddRange(cacheLinhas.ToArray());
+            }
+            catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Processos)", erro.Message })); }
+            finally { barraProgresso.Visible = false; }
+        }
+
+        // --- NOVO MÓDULO: SERVIÇOS DO SISTEMA (CONECTADO À BARRA DE PROGRESSO) ---
+        private void CarregarDadosServicos()
+        {
+            try
+            {
+                listaDetalhes.Items.Add(new ListViewItem("--- ESTATÍSTICAS DOS SERVIÇOS DO SISTEMA ---"));
+                ObjectQuery consulta = new ObjectQuery("SELECT DisplayName, State, StartMode FROM Win32_Service");
+
+                using (ManagementObjectSearcher buscador = new ManagementObjectSearcher(consulta))
+                {
+                    ManagementObjectCollection colecao = buscador.Get();
+
+                    // Ajuste da barra contínua de acordo com o total extraído
+                    barraProgresso.Style = ProgressBarStyle.Continuous;
+                    barraProgresso.Maximum = colecao.Count;
+                    barraProgresso.Value = 0;
+                    barraProgresso.Visible = true;
+
+                    int contadorAtivos = 0;
+                    int contadorInativos = 0;
+                    List<ListViewItem> cacheLinhas = new List<ListViewItem>();
+
+                    foreach (ManagementObject item in colecao)
+                    {
+                        string nome = item["DisplayName"]?.ToString();
+                        string estado = item["State"]?.ToString();
+                        string modo = item["StartMode"]?.ToString();
+
+                        if (estado == "Running") contadorAtivos++;
+                        else contadorInativos++;
+
+                        if (!string.IsNullOrEmpty(nome))
+                        {
+                            string statusFormatado = $"{estado} (Modo: {modo})";
+                            cacheLinhas.Add(new ListViewItem(new[] { nome, statusFormatado }));
+                        }
+
+                        // Progresso contínuo renderizado durante o loop
+                        barraProgresso.Value++;
+                        Application.DoEvents();
+                    }
+
+                    listaDetalhes.Items.Add(new ListViewItem(new[] { "Serviços em Execução (Ativos)", contadorAtivos.ToString() }));
+                    listaDetalhes.Items.Add(new ListViewItem(new[] { "Serviços Parados (Inativos)", contadorInativos.ToString() }));
+                    listaDetalhes.Items.Add(new ListViewItem(""));
+                    listaDetalhes.Items.Add(new ListViewItem(new[] { "NOME DO SERVIÇO", "STATUS E MODO DE INICIALIZAÇÃO" }));
+                    listaDetalhes.Items.AddRange(cacheLinhas.ToArray()); // Inserção compacta final
+                }
+            }
+            catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Serviços)", erro.Message })); }
+            finally { barraProgresso.Visible = false; }
+        }
+
+        // --- NOVO MÓDULO: CONTAS DE USUÁRIO ---
+        private void CarregarDadosUsuarios()
+        {
+            try
+            {
+                listaDetalhes.Items.Add(new ListViewItem("--- CONTAS DE USUÁRIO LOCAIS ---"));
+                ObjectQuery consulta = new ObjectQuery("SELECT Name, FullName, Disabled, PasswordRequired, Lockout, Status FROM Win32_UserAccount WHERE LocalAccount=True");
+
+                using (ManagementObjectSearcher buscador = new ManagementObjectSearcher(consulta))
+                {
+                    int contador = 1;
+                    foreach (ManagementObject item in buscador.Get())
+                    {
+                        string nome = item["Name"]?.ToString();
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { $"Conta Local {contador}", nome }));
+
+                        string nomeCompleto = item["FullName"]?.ToString();
+                        if (!string.IsNullOrEmpty(nomeCompleto))
+                        {
+                            listaDetalhes.Items.Add(new ListViewItem(new[] { "  Nome Completo de Registro", nomeCompleto }));
+                        }
+
+                        bool inativo = item["Disabled"] != null && Convert.ToBoolean(item["Disabled"]);
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "  Status da Conta de Usuário", inativo ? "Inativa (Desabilitada)" : "Ativa" }));
+
+                        bool bloqueada = item["Lockout"] != null && Convert.ToBoolean(item["Lockout"]);
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "  Bloqueio por Erro de Senha", bloqueada ? "Bloqueada" : "Livre" }));
+
+                        bool exigeSenha = item["PasswordRequired"] != null && Convert.ToBoolean(item["PasswordRequired"]);
+                        listaDetalhes.Items.Add(new ListViewItem(new[] { "  Exigência de Senha no Login", exigeSenha ? "Sim" : "Não" }));
+
+                        string status = item["Status"]?.ToString();
+                        if (!string.IsNullOrEmpty(status))
+                        {
+                            listaDetalhes.Items.Add(new ListViewItem(new[] { "  Condição Geral", status }));
+                        }
+
+                        listaDetalhes.Items.Add(new ListViewItem(""));
+                        contador++;
+                    }
+                }
+            }
+            catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Usuários)", erro.Message })); }
         }
     }
 }

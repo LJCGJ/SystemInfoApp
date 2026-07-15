@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Linq;
 using System.Collections.Generic;
+using System.Collections; // Biblioteca adicionada para leitura de dicionários nativos
 using Microsoft.Win32;
 
 namespace SystemInfoApp
@@ -64,7 +65,8 @@ namespace SystemInfoApp
             TreeNode noSoftware = menuLateral.Nodes.Add("Software");
             noSoftware.Nodes.Add("Sistema Operacional");
             noSoftware.Nodes.Add("Programas Instalados");
-            noSoftware.Nodes.Add("Programas de Inicialização"); // Nova funcionalidade adicionada
+            noSoftware.Nodes.Add("Programas de Inicialização");
+            noSoftware.Nodes.Add("Variáveis de Ambiente"); // Nova funcionalidade adicionada
             noSoftware.Nodes.Add("Processos em Execução");
             noSoftware.Nodes.Add("Contas de Usuário");
             noSoftware.Nodes.Add("Serviços do Sistema");
@@ -179,7 +181,8 @@ namespace SystemInfoApp
                 else if (e.Node.Text == "Bateria e Energia") CarregarDadosBateria();
                 else if (e.Node.Text == "Sistema Operacional") CarregarDadosSistemaOperacional();
                 else if (e.Node.Text == "Programas Instalados") CarregarDadosProgramas();
-                else if (e.Node.Text == "Programas de Inicialização") CarregarDadosInicializacao(); // Mapeamento ativado
+                else if (e.Node.Text == "Programas de Inicialização") CarregarDadosInicializacao();
+                else if (e.Node.Text == "Variáveis de Ambiente") CarregarDadosVariaveisAmbiente(); // Mapeamento ativado
                 else if (e.Node.Text == "Contas de Usuário") CarregarDadosUsuarios();
                 else if (e.Node.Text == "Processos em Execução") CarregarDadosProcessos();
                 else if (e.Node.Text == "Serviços do Sistema") CarregarDadosServicos();
@@ -1042,7 +1045,6 @@ namespace SystemInfoApp
             finally { barraProgresso.Visible = false; }
         }
 
-        // --- NOVA FUNÇÃO: PROGRAMAS DE INICIALIZAÇÃO ---
         private void CarregarDadosInicializacao()
         {
             try
@@ -1084,6 +1086,33 @@ namespace SystemInfoApp
                 }
             }
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Inicialização)", erro.Message })); }
+        }
+
+        // --- NOVA FUNÇÃO: VARIÁVEIS DE AMBIENTE ---
+        private void CarregarDadosVariaveisAmbiente()
+        {
+            try
+            {
+                listaDetalhes.Items.Add(new ListViewItem("--- VARIÁVEIS DE AMBIENTE DO SISTEMA E USUÁRIO ---"));
+
+                IDictionary variaveis = Environment.GetEnvironmentVariables();
+                List<ListViewItem> cacheLinhas = new List<ListViewItem>();
+
+                foreach (DictionaryEntry variavel in variaveis)
+                {
+                    string nome = variavel.Key.ToString();
+                    string valor = variavel.Value.ToString();
+                    cacheLinhas.Add(new ListViewItem(new[] { nome, valor }));
+                }
+
+                var linhasOrdenadas = cacheLinhas.OrderBy(l => l.Text).ToArray();
+
+                listaDetalhes.Items.Add(new ListViewItem(new[] { "Total de Variáveis", linhasOrdenadas.Length.ToString() }));
+                listaDetalhes.Items.Add(new ListViewItem(""));
+                listaDetalhes.Items.Add(new ListViewItem(new[] { "NOME DA VARIÁVEL", "VALOR / CAMINHO ATRIBUÍDO" }));
+                listaDetalhes.Items.AddRange(linhasOrdenadas);
+            }
+            catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Variáveis de Ambiente)", erro.Message })); }
         }
     }
 }

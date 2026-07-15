@@ -71,10 +71,11 @@ namespace SystemInfoApp
             noSoftware.Nodes.Add("Processos em Execução");
             noSoftware.Nodes.Add("Contas de Usuário");
             noSoftware.Nodes.Add("Serviços do Sistema");
-            noSoftware.Nodes.Add("Logs de Eventos"); // Nova funcionalidade adicionada
+            noSoftware.Nodes.Add("Logs de Eventos");
 
             TreeNode noRede = menuLateral.Nodes.Add("Rede");
             noRede.Nodes.Add("Adaptadores de Conexão");
+            noRede.Nodes.Add("Conexões Ativas (TCP)"); // Nova funcionalidade adicionada
 
             menuLateral.ExpandAll();
             menuLateral.AfterSelect += async (sender, e) => await MenuLateral_AfterSelectAsync(e);
@@ -189,8 +190,9 @@ namespace SystemInfoApp
                 else if (e.Node.Text == "Contas de Usuário") CarregarDadosUsuarios();
                 else if (e.Node.Text == "Processos em Execução") CarregarDadosProcessos();
                 else if (e.Node.Text == "Serviços do Sistema") CarregarDadosServicos();
-                else if (e.Node.Text == "Logs de Eventos") CarregarDadosLogsEventos(); // Mapeamento ativado
+                else if (e.Node.Text == "Logs de Eventos") CarregarDadosLogsEventos();
                 else if (e.Node.Text == "Adaptadores de Conexão") CarregarDadosRede();
+                else if (e.Node.Text == "Conexões Ativas (TCP)") CarregarDadosConexoesRede(); // Mapeamento ativado
 
                 listaDetalhes.EndUpdate();
             }
@@ -1166,7 +1168,6 @@ namespace SystemInfoApp
             finally { barraProgresso.Visible = false; }
         }
 
-        // --- NOVA FUNÇÃO: LOGS DE EVENTOS ---
         private void CarregarDadosLogsEventos()
         {
             try
@@ -1206,6 +1207,44 @@ namespace SystemInfoApp
                 listaDetalhes.Items.AddRange(cacheLinhas.ToArray());
             }
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Logs)", erro.Message })); }
+            finally { barraProgresso.Visible = false; }
+        }
+
+        // --- NOVA FUNÇÃO: CONEXÕES DE REDE (TCP) ---
+        private void CarregarDadosConexoesRede()
+        {
+            try
+            {
+                listaDetalhes.Items.Add(new ListViewItem("--- CONEXÕES TCP ATIVAS (PORTAS ABERTAS) ---"));
+
+                IPGlobalProperties propriedadesGlobais = IPGlobalProperties.GetIPGlobalProperties();
+                TcpConnectionInformation[] conexoesTcp = propriedadesGlobais.GetActiveTcpConnections();
+
+                barraProgresso.Style = ProgressBarStyle.Continuous;
+                barraProgresso.Maximum = conexoesTcp.Length > 0 ? conexoesTcp.Length : 100;
+                barraProgresso.Value = 0;
+                barraProgresso.Visible = true;
+
+                List<ListViewItem> cacheLinhas = new List<ListViewItem>();
+
+                foreach (TcpConnectionInformation conexao in conexoesTcp)
+                {
+                    string ipLocal = $"{conexao.LocalEndPoint.Address}:{conexao.LocalEndPoint.Port}";
+                    string ipRemoto = $"{conexao.RemoteEndPoint.Address}:{conexao.RemoteEndPoint.Port}";
+                    string estado = conexao.State.ToString();
+
+                    cacheLinhas.Add(new ListViewItem(new[] { $"Local: {ipLocal}", $"Destino: {ipRemoto} | Estado: {estado}" }));
+
+                    if (barraProgresso.Value < barraProgresso.Maximum) barraProgresso.Value++;
+                    Application.DoEvents();
+                }
+
+                listaDetalhes.Items.Add(new ListViewItem(new[] { "Total de Conexões Encontradas", conexoesTcp.Length.ToString() }));
+                listaDetalhes.Items.Add(new ListViewItem(""));
+                listaDetalhes.Items.Add(new ListViewItem(new[] { "ENDEREÇO LOCAL (IP:PORTA)", "ENDEREÇO REMOTO E ESTADO DE COMUNICAÇÃO" }));
+                listaDetalhes.Items.AddRange(cacheLinhas.ToArray());
+            }
+            catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Conexões)", erro.Message })); }
             finally { barraProgresso.Visible = false; }
         }
     }

@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Linq;
 using System.Collections.Generic;
-using System.Collections; // Biblioteca adicionada para leitura de dicionários nativos
+using System.Collections;
 using Microsoft.Win32;
 
 namespace SystemInfoApp
@@ -66,10 +66,12 @@ namespace SystemInfoApp
             noSoftware.Nodes.Add("Sistema Operacional");
             noSoftware.Nodes.Add("Programas Instalados");
             noSoftware.Nodes.Add("Programas de Inicialização");
-            noSoftware.Nodes.Add("Variáveis de Ambiente"); // Nova funcionalidade adicionada
+            noSoftware.Nodes.Add("Variáveis de Ambiente");
+            noSoftware.Nodes.Add("Drivers do Sistema");
             noSoftware.Nodes.Add("Processos em Execução");
             noSoftware.Nodes.Add("Contas de Usuário");
             noSoftware.Nodes.Add("Serviços do Sistema");
+            noSoftware.Nodes.Add("Logs de Eventos"); // Nova funcionalidade adicionada
 
             TreeNode noRede = menuLateral.Nodes.Add("Rede");
             noRede.Nodes.Add("Adaptadores de Conexão");
@@ -182,10 +184,12 @@ namespace SystemInfoApp
                 else if (e.Node.Text == "Sistema Operacional") CarregarDadosSistemaOperacional();
                 else if (e.Node.Text == "Programas Instalados") CarregarDadosProgramas();
                 else if (e.Node.Text == "Programas de Inicialização") CarregarDadosInicializacao();
-                else if (e.Node.Text == "Variáveis de Ambiente") CarregarDadosVariaveisAmbiente(); // Mapeamento ativado
+                else if (e.Node.Text == "Variáveis de Ambiente") CarregarDadosVariaveisAmbiente();
+                else if (e.Node.Text == "Drivers do Sistema") CarregarDadosDrivers();
                 else if (e.Node.Text == "Contas de Usuário") CarregarDadosUsuarios();
                 else if (e.Node.Text == "Processos em Execução") CarregarDadosProcessos();
                 else if (e.Node.Text == "Serviços do Sistema") CarregarDadosServicos();
+                else if (e.Node.Text == "Logs de Eventos") CarregarDadosLogsEventos(); // Mapeamento ativado
                 else if (e.Node.Text == "Adaptadores de Conexão") CarregarDadosRede();
 
                 listaDetalhes.EndUpdate();
@@ -1088,7 +1092,6 @@ namespace SystemInfoApp
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Inicialização)", erro.Message })); }
         }
 
-        // --- NOVA FUNÇÃO: VARIÁVEIS DE AMBIENTE ---
         private void CarregarDadosVariaveisAmbiente()
         {
             try
@@ -1113,6 +1116,97 @@ namespace SystemInfoApp
                 listaDetalhes.Items.AddRange(linhasOrdenadas);
             }
             catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Variáveis de Ambiente)", erro.Message })); }
+        }
+
+        private void CarregarDadosDrivers()
+        {
+            try
+            {
+                listaDetalhes.Items.Add(new ListViewItem("--- DRIVERS DO SISTEMA (ARQUIVOS .SYS) ---"));
+                ObjectQuery consulta = new ObjectQuery("SELECT Name, DisplayName, PathName, State, StartMode FROM Win32_SystemDriver");
+
+                using (ManagementObjectSearcher buscador = new ManagementObjectSearcher(consulta))
+                {
+                    ManagementObjectCollection colecao = buscador.Get();
+
+                    barraProgresso.Style = ProgressBarStyle.Continuous;
+                    barraProgresso.Maximum = colecao.Count;
+                    barraProgresso.Value = 0;
+                    barraProgresso.Visible = true;
+
+                    List<ListViewItem> cacheLinhas = new List<ListViewItem>();
+
+                    foreach (ManagementObject item in colecao)
+                    {
+                        string nome = item["DisplayName"]?.ToString() ?? item["Name"]?.ToString();
+                        string caminho = item["PathName"]?.ToString() ?? "Caminho não especificado";
+                        string estado = item["State"]?.ToString();
+                        string modo = item["StartMode"]?.ToString();
+
+                        if (!string.IsNullOrEmpty(nome))
+                        {
+                            cacheLinhas.Add(new ListViewItem(new[] { nome, $"Estado: {estado} | Inicialização: {modo}" }));
+                            if (caminho != "Caminho não especificado")
+                            {
+                                cacheLinhas.Add(new ListViewItem(new[] { "  Caminho Físico", caminho }));
+                            }
+                            cacheLinhas.Add(new ListViewItem(""));
+                        }
+
+                        if (barraProgresso.Value < barraProgresso.Maximum) barraProgresso.Value++;
+                        if (barraProgresso.Value % 10 == 0) Application.DoEvents();
+                    }
+
+                    listaDetalhes.Items.Add(new ListViewItem(new[] { "Total de Drivers Identificados", colecao.Count.ToString() }));
+                    listaDetalhes.Items.Add(new ListViewItem(""));
+                    listaDetalhes.Items.AddRange(cacheLinhas.ToArray());
+                }
+            }
+            catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Drivers)", erro.Message })); }
+            finally { barraProgresso.Visible = false; }
+        }
+
+        // --- NOVA FUNÇÃO: LOGS DE EVENTOS ---
+        private void CarregarDadosLogsEventos()
+        {
+            try
+            {
+                listaDetalhes.Items.Add(new ListViewItem("--- ÚLTIMOS ERROS E ALERTAS DO SISTEMA ---"));
+
+                barraProgresso.Style = ProgressBarStyle.Marquee;
+                barraProgresso.Visible = true;
+                Application.DoEvents();
+
+                EventLog logSistema = new EventLog("System");
+                List<ListViewItem> cacheLinhas = new List<ListViewItem>();
+
+                int contador = 0;
+                int maximo = 50;
+
+                for (int i = logSistema.Entries.Count - 1; i >= 0; i--)
+                {
+                    EventLogEntry entrada = logSistema.Entries[i];
+                    if (entrada.EntryType == EventLogEntryType.Error || entrada.EntryType == EventLogEntryType.Warning)
+                    {
+                        string tipo = entrada.EntryType == EventLogEntryType.Error ? "[ERRO]" : "[ALERTA]";
+                        string data = entrada.TimeGenerated.ToString("dd/MM/yyyy HH:mm:ss");
+                        string fonte = entrada.Source;
+
+                        string mensagem = entrada.Message.Replace("\n", " ").Replace("\r", " ");
+                        if (mensagem.Length > 200) mensagem = mensagem.Substring(0, 200) + "...";
+
+                        cacheLinhas.Add(new ListViewItem(new[] { $"{tipo} {fonte} ({data})", mensagem }));
+                        contador++;
+                    }
+                    if (contador >= maximo) break;
+                }
+
+                listaDetalhes.Items.Add(new ListViewItem(new[] { "Total Exibido", contador.ToString() }));
+                listaDetalhes.Items.Add(new ListViewItem(""));
+                listaDetalhes.Items.AddRange(cacheLinhas.ToArray());
+            }
+            catch (Exception erro) { listaDetalhes.Items.Add(new ListViewItem(new[] { "Erro (Logs)", erro.Message })); }
+            finally { barraProgresso.Visible = false; }
         }
     }
 }
